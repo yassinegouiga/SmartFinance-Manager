@@ -41,7 +41,7 @@ jobs:
         run: pip install -r ${{ matrix.service }}/requirements.txt --quiet
 
       - name: Run tests
-        run: cd ${{ matrix.service }} && pytest tests/ -v
+        run: pytest ${{ matrix.service }}/tests/ -v --rootdir=${{ matrix.service }}
         env:
           TESTING: "1"
           # Dummy values so pydantic-settings doesn't fail on import
