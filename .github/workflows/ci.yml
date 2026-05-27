@@ -38,10 +38,10 @@ jobs:
           cache-dependency-path: ${{ matrix.service }}/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r ${{ matrix.service }}/requirements.txt
+        run: pip install -r ${{ matrix.service }}/requirements.txt --quiet
 
       - name: Run tests
-        run: pytest ${{ matrix.service }}/tests/ -v
+        run: cd ${{ matrix.service }} && pytest tests/ -v
         env:
           TESTING: "1"
           # Dummy values so pydantic-settings doesn't fail on import
