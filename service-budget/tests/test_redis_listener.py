@@ -26,7 +26,7 @@ async def test_redis_listener_updates_budget(client, mock_redis):
         "amount": 100.0,
         "type": "expense"
     }
-    await redis_subscriber._handle_event("TransactionCreated", event_data)
+    await redis_subscriber._handle_event("transaction.created", event_data)
 
     # Fetch budget to see if spent_amount increased
     check_res = await client.get(f"/api/v1/budgets/{budget_id}")
@@ -53,7 +53,7 @@ async def test_redis_listener_budget_exceeded(client, mock_redis):
         "amount": 150.0,
         "type": "expense"
     }
-    await redis_subscriber._handle_event("TransactionCreated", event_data)
+    await redis_subscriber._handle_event("transaction.created", event_data)
 
     # Should publish BudgetExceeded
-    mock_redis.publish.assert_called_with("BudgetExceeded", ANY)
+    mock_redis.publish.assert_called_with("budget.exceeded", ANY)
