@@ -1,0 +1,255 @@
+.settings-page {
+  max-width: 720px;
+}
+
+.settings-header {
+  margin-bottom: 28px;
+}
+.settings-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.settings-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* ── Cards ─────────────────────────────────────────────── */
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+
+.settings-card-head {
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.settings-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+.settings-card-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.settings-card-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* danger zone card — subtle red tint on the header */
+.settings-card-danger-zone .settings-card-head {
+  border-left: 3px solid var(--red);
+}
+
+/* ── Profile ─────────────────────────────────────────── */
+.settings-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.settings-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #6C63FF, #3ECFCF);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.settings-avatar-name {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.settings-avatar-email {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.settings-input-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-save-btn {
+  align-self: flex-start;
+  padding: 9px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.settings-save-btn:hover:not(:disabled) { opacity: 0.88; }
+.settings-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Preferences rows ─────────────────────────────────── */
+.settings-pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.settings-pref-text { flex: 1; }
+.settings-pref-label {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.settings-pref-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.settings-divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin: 0 -24px;
+}
+
+/* theme button */
+.settings-theme-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.settings-theme-btn:hover {
+  background: rgba(108,99,255,0.1);
+  border-color: rgba(108,99,255,0.3);
+  color: var(--accent);
+}
+
+/* currency select */
+.settings-currency-select {
+  max-width: 240px;
+  flex-shrink: 0;
+}
+
+/* ── Outline button (secondary actions) ───────────────── */
+.settings-outline-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+  flex-shrink: 0;
+  font-family: inherit;
+}
+.settings-outline-btn:hover:not(:disabled) {
+  background: var(--glass-hover);
+  border-color: var(--text-secondary);
+}
+.settings-outline-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Danger button ────────────────────────────────────── */
+.settings-danger-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(239,68,68,0.35);
+  background: rgba(239,68,68,0.08);
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+  flex-shrink: 0;
+  font-family: inherit;
+}
+.settings-danger-btn:hover:not(:disabled) {
+  background: rgba(239,68,68,0.15);
+  border-color: var(--red);
+}
+.settings-danger-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.settings-danger-text { color: var(--red); }
+
+/* ── Inline messages ──────────────────────────────────── */
+.settings-inline-msg {
+  font-size: 13px;
+  margin: 0;
+}
+.settings-inline-msg.ok  { color: #10B981; }
+.settings-inline-msg.err { color: var(--red); }
+
+/* ── Delete modal ─────────────────────────────────────── */
+.settings-delete-warning {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+.settings-delete-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+
+/* ── Responsive ───────────────────────────────────────── */
+@media (max-width: 560px) {
+  .settings-two-col { grid-template-columns: 1fr; }
+  .settings-pref-row { flex-direction: column; align-items: flex-start; }
+  .settings-currency-select { max-width: 100%; width: 100%; }
+}
