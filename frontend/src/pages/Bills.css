@@ -1,0 +1,65 @@
+.bills-page { animation: fadeIn 0.3s ease; }
+
+.bills-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.bills-stat {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bills-stat-val { font-size: 22px; font-weight: 800; }
+.bills-stat-label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
+
+.bills-list { display: flex; flex-direction: column; gap: 10px; }
+
+.bill-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  transition: var(--transition);
+}
+.bill-card:hover { transform: translateX(2px); }
+.bill-card-overdue { border-color: rgba(239,68,68,0.2); }
+
+.bill-card-icon {
+  width: 40px;
+  height: 40px;
+  background: rgba(108,99,255,0.1);
+  border: 1px solid rgba(108,99,255,0.15);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.bill-card-info { flex: 1; min-width: 0; }
+.bill-card-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.bill-name { font-size: 15px; font-weight: 700; }
+.bill-due { font-size: 12px; color: var(--text-muted); }
+
+.bill-card-amount {
+  font-size: 20px;
+  font-weight: 800;
+  white-space: nowrap;
+  padding: 0 16px;
+}
+
+.bill-card-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.overdue-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: pulse 1.5s ease infinite;
+  margin-right: 2px;
+}
