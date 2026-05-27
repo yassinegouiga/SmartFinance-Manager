@@ -24,6 +24,7 @@ email-validator>=2.0.0
 # Testing
 pytest>=9.0.0
 pytest-asyncio>=1.0.0
+aiosqlite>=0.20.0
 
 # Redis pub/sub
 redis>=5.0.0
