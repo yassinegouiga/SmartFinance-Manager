@@ -1,0 +1,55 @@
+# Production overrides — use with:
+#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this adds on top of docker-compose.yml:
+#   - restart: always  (recover from crashes AND server reboots)
+#   - log rotation     (prevents disk from filling up)
+
+version: '3.8'
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  redis:
+    restart: always
+    logging: *logging
+
+  postgres:
+    restart: always
+    logging: *logging
+
+  service-user:
+    restart: always
+    logging: *logging
+
+  service-transaction:
+    restart: always
+    logging: *logging
+
+  service-budget:
+    restart: always
+    logging: *logging
+
+  service-billing:
+    restart: always
+    logging: *logging
+
+  service-analytics:
+    restart: always
+    logging: *logging
+
+  service-notification:
+    restart: always
+    logging: *logging
+
+  frontend:
+    restart: always
+    logging: *logging
+
+  api-gateway:
+    restart: always
+    logging: *logging

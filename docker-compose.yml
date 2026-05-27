@@ -1,0 +1,211 @@
+# SmartFinance Manager - Docker Compose
+# Secrets are loaded from .env (see .env.example)
+
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: smartfinance-redis
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  postgres:
+    image: postgres:16
+    container_name: smartfinance-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: smartfinance_users
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smartfinance_users"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  service-user:
+    build:
+      context: .
+      dockerfile: service-user/Dockerfile
+    container_name: smartfinance-service-user
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/smartfinance_users
+      - REDIS_URL=redis://redis:6379
+      - FIREBASE_CREDENTIALS_PATH=/app/firebase-service-account.json
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    volumes:
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  service-transaction:
+    build:
+      context: .
+      dockerfile: service-transaction/Dockerfile
+    container_name: smartfinance-service-transaction
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/smartfinance_users
+      - REDIS_URL=redis://redis:6379
+      - FIREBASE_CREDENTIALS_PATH=/app/firebase-service-account.json
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    volumes:
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  service-budget:
+    build:
+      context: .
+      dockerfile: service-budget/Dockerfile
+    container_name: smartfinance-service-budget
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/smartfinance_users
+      - REDIS_URL=redis://redis:6379
+      - FIREBASE_CREDENTIALS_PATH=/app/firebase-service-account.json
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    volumes:
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  service-billing:
+    build:
+      context: .
+      dockerfile: service-billing/Dockerfile
+    container_name: smartfinance-service-billing
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/smartfinance_users
+      - REDIS_URL=redis://redis:6379
+      - FIREBASE_CREDENTIALS_PATH=/app/firebase-service-account.json
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    volumes:
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  service-analytics:
+    build:
+      context: .
+      dockerfile: service-analytics/Dockerfile
+    container_name: smartfinance-service-analytics
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/smartfinance_users
+      - REDIS_URL=redis://redis:6379
+      - FIREBASE_CREDENTIALS_PATH=/app/firebase-service-account.json
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    volumes:
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  service-notification:
+    build:
+      context: .
+      dockerfile: service-notification/Dockerfile
+    container_name: smartfinance-service-notification
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/smartfinance_users
+      - FIREBASE_CREDENTIALS_PATH=/app/firebase-service-account.json
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_FROM=${RESEND_FROM}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    volumes:
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8888}
+    container_name: smartfinance-frontend
+    ports:
+      - "3000:80"
+    restart: always
+
+  api-gateway:
+    image: nginx:alpine
+    container_name: smartfinance-api-gateway
+    ports:
+      - "8888:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - service-user
+      - service-transaction
+      - service-budget
+      - service-billing
+      - service-analytics
+      - service-notification
+
+volumes:
+  postgres_data:

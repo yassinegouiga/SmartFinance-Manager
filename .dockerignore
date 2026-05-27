@@ -1,0 +1,26 @@
+# ── Secrets ────────────────────────────────────────────────
+.env
+*/.env
+firebase-service-account.json
+*/firebase-service-account.json
+
+# ── Frontend dev artifacts ─────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# ── Python artifacts ───────────────────────────────────────
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+
+# ── Git & IDE ──────────────────────────────────────────────
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# ── OS ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
