@@ -1,0 +1,32 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            cd /root/SmartFinance-Manager
+
+            echo "Pulling latest code..."
+            git pull origin main
+
+            echo "Rebuilding and restarting containers..."
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+
+            echo "Cleaning up unused Docker images..."
+            docker image prune -f
+
+            echo "Deploy complete."
