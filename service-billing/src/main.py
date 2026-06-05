@@ -12,6 +12,7 @@ Monitoring (architecture §20):
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -46,11 +47,19 @@ async def lifespan(app: FastAPI):
     await redis_publisher.connect()
 
     async with engine.begin() as conn:
+        from sqlalchemy import text
+
         # Ensure the isolated schema exists
-        await conn.execute(
-            __import__("sqlalchemy").text("CREATE SCHEMA IF NOT EXISTS billing_service")
-        )
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS billing_service"))
         await conn.run_sync(Base.metadata.create_all)
+
+        # Idempotent additive migration: create_all only creates missing tables,
+        # it never alters existing ones — so add new nullable columns explicitly
+        # for databases provisioned before the column existed.
+        table = "bills" if os.environ.get("TESTING") else "billing_service.bills"
+        await conn.execute(
+            text(f"ALTER TABLE IF EXISTS {table} ADD COLUMN IF NOT EXISTS category_id VARCHAR")
+        )
 
     logger.info("Database tables ready.")
 
