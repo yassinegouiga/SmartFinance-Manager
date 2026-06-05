@@ -1,326 +1,320 @@
 import { useEffect, useState, useMemo } from 'react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import api from '../services/api';
-import './Transactions.css';
-
-const fmt = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n ?? 0);
+import { useAuth } from '../context/AuthContext';
+import { useCategories } from '../context/CategoriesContext';
+import Icon from '../components/Icons/Icon';
+import {
+  Modal, Field, TextInput, Select, Segmented, EmptyState, Spinner,
+  Money, SearchInput, PageHead, CatIcon, useToast,
+} from '../components/UI';
+import { fmtMoney, fmtDate, currencySymbol } from '../utils/format';
 
 export default function Transactions() {
+  const { currency = 'USD' } = useAuth();
+  const { categories, catById } = useCategories();
+  const toast = useToast();
+
   const [transactions, setTransactions] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState('ALL');
-  const [deletingId, setDeletingId] = useState(null);
+  const [loading, setLoading]           = useState(true);
+  const [showAdd, setShowAdd]           = useState(false);
+  const [exportOpen, setExportOpen]     = useState(false);
+  const [search, setSearch]             = useState('');
+  const [filterType, setFilterType]     = useState('all');
+  const [filterCat, setFilterCat]       = useState('all');
+  const [filterPeriod, setFilterPeriod] = useState('all');
+  const [deletingId, setDeletingId]     = useState(null);
 
-  const fetchData = async () => {
-    try {
-      const [t, c] = await Promise.all([
-        api.get('/api/v1/transactions/', { params: { limit: 100 } }),
-        api.get('/api/v1/categories/'),
-      ]);
-      setTransactions(t.data);
-      setCategories(c.data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchData(); }, []);
-
-  const categoryMap = useMemo(() => {
-    const m = {};
-    categories.forEach(c => { m[c.id] = c.name; });
-    return m;
-  }, [categories]);
+  useEffect(() => {
+    api.get('/api/v1/transactions/', { params: { limit: 500 } })
+      .then(r => setTransactions(r.data))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = useMemo(() => {
+    const now = new Date();
     return transactions
-      .filter(t => filterType === 'ALL' || t.type === filterType)
+      .filter(t => filterType === 'all' || t.type === filterType.toUpperCase())
+      .filter(t => filterCat === 'all' || t.category_id === filterCat)
+      .filter(t => {
+        const d = new Date(t.date);
+        if (filterPeriod === 'thism') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        if (filterPeriod === 'lastm') {
+          const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear();
+        }
+        return true;
+      })
       .filter(t => {
         if (!search) return true;
         const s = search.toLowerCase();
-        return (t.description || '').toLowerCase().includes(s) ||
-               (categoryMap[t.category_id] || '').toLowerCase().includes(s);
+        return (t.description || '').toLowerCase().includes(s) || (catById(t.category_id).name || '').toLowerCase().includes(s);
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [transactions, filterType, search, categoryMap]);
+  }, [transactions, filterType, filterCat, filterPeriod, search, catById]);
+
+  const totals = useMemo(
+    () => filtered.reduce((a, t) => { if (t.type === 'INCOME') a.income += t.amount; else a.expense += t.amount; return a; }, { income: 0, expense: 0 }),
+    [filtered],
+  );
+
+  const groups = useMemo(() => {
+    const m = new Map();
+    filtered.forEach(t => { const k = fmtDate(t.date, 'rel'); if (!m.has(k)) m.set(k, []); m.get(k).push(t); });
+    return [...m.entries()];
+  }, [filtered]);
+
+  const hasFilters = search || filterType !== 'all' || filterCat !== 'all' || filterPeriod !== 'all';
+  const clearFilters = () => { setSearch(''); setFilterType('all'); setFilterCat('all'); setFilterPeriod('all'); };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this transaction?')) return;
     setDeletingId(id);
     try {
       await api.delete(`/api/v1/transactions/${id}`);
       setTransactions(prev => prev.filter(t => t.id !== id));
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const handleAdded = (txn) => {
-    setTransactions(prev => [txn, ...prev]);
-    setDrawerOpen(false);
-  };
-
-  const exportPDF = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.setTextColor(108, 99, 255);
-    doc.text('Transactions Report', 14, 18);
-    doc.setFontSize(10);
-    doc.setTextColor(130, 130, 150);
-    doc.text(`Generated ${new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })}`, 14, 25);
-    autoTable(doc, {
-      startY: 30,
-      head: [['Date', 'Description', 'Category', 'Type', 'Amount']],
-      body: filtered.map(t => [
-        new Date(t.date).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }),
-        t.description || '—',
-        categoryMap[t.category_id] || 'Unknown',
-        t.type,
-        (t.type === 'INCOME' ? '+' : '-') + '$' + Number(t.amount).toFixed(2),
-      ]),
-      headStyles: { fillColor: [108, 99, 255], textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [245, 245, 252] },
-      styles: { fontSize: 9, cellPadding: 4 },
-      columnStyles: { 4: { halign: 'right' } },
-    });
-    doc.save(`transactions-${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast && toast('Transaction deleted', 'neg');
+    } catch { /* silent */ }
+    finally { setDeletingId(null); }
   };
 
   const exportCSV = () => {
-    const rows = [
-      ['Date', 'Description', 'Category', 'Type', 'Amount'],
-      ...filtered.map(t => [
-        new Date(t.date).toLocaleDateString('en-US'),
-        t.description || '',
-        categoryMap[t.category_id] || 'Unknown',
-        t.type,
-        t.amount,
-      ]),
-    ];
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
+    const rows = [['Date', 'Description', 'Category', 'Type', 'Amount', 'Currency']];
+    filtered.forEach(t => {
+      const d = new Date(t.date).toISOString().slice(0, 10);
+      const amt = (t.type === 'INCOME' ? '' : '-') + t.amount.toFixed(2);
+      const esc = (s) => /[",\n]/.test(String(s)) ? '"' + String(s).replace(/"/g, '""') + '"' : String(s);
+      rows.push([d, t.description || '', catById(t.category_id).name, t.type, amt, currency].map(esc));
+    });
+    const csv = rows.map(r => r.join(',')).join('\r\n');
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
+    a.download = `smartfinance-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
+    setExportOpen(false);
+    toast && toast(`Exported ${filtered.length} transactions to CSV`, 'pos');
+  };
+
+  const exportPDF = () => {
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#10b981';
+    const body = filtered.map(t => {
+      const d = new Date(t.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      const c = catById(t.category_id);
+      const sign = t.type === 'INCOME' ? '+' : '−';
+      const color = t.type === 'INCOME' ? '#059669' : '#e11d48';
+      return `<tr><td>${d}</td><td><span class="dot" style="background:${c.color}"></span>${c.name}</td><td>${(t.description || '').replace(/</g, '&lt;')}</td><td style="text-align:right;color:${color};font-weight:700">${sign}${fmtMoney(t.amount, currency)}</td></tr>`;
+    }).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>SmartFinance — Transactions</title>
+    <style>*{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;box-sizing:border-box}body{margin:40px;color:#0e1320}.head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${accent};padding-bottom:16px;margin-bottom:24px}.brand{font-size:22px;font-weight:800;letter-spacing:-.02em}.brand span{color:${accent}}.sub{color:#828c9d;font-size:12px;margin-top:4px}.totals{display:flex;gap:28px;margin-bottom:24px}.totals .t{font-size:12px;color:#828c9d}.totals .v{font-size:18px;font-weight:800;margin-top:2px}table{width:100%;border-collapse:collapse;font-size:12.5px}th{text-align:left;text-transform:uppercase;font-size:10px;letter-spacing:.06em;color:#828c9d;padding:8px 10px;border-bottom:1px solid #e2e7ee}th:last-child{text-align:right}td{padding:9px 10px;border-bottom:1px solid #eef1f6}.dot{display:inline-block;width:8px;height:8px;border-radius:3px;margin-right:7px;vertical-align:middle}.foot{margin-top:24px;color:#aab2c0;font-size:11px;text-align:center}@media print{body{margin:18px}}</style></head><body>
+    <div class="head"><div><div class="brand">Smart<span>Finance</span></div><div class="sub">Transaction statement · ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div></div><div class="sub">${filtered.length} transactions</div></div>
+    <div class="totals"><div><div class="t">Income</div><div class="v" style="color:#059669">${fmtMoney(totals.income, currency)}</div></div><div><div class="t">Expenses</div><div class="v" style="color:#e11d48">${fmtMoney(totals.expense, currency)}</div></div><div><div class="t">Net</div><div class="v">${fmtMoney(totals.income - totals.expense, currency)}</div></div></div>
+    <table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th></tr></thead><tbody>${body}</tbody></table>
+    <div class="foot">Generated by SmartFinance Manager · ${new Date().toLocaleString()}</div>
+    <script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { toast && toast('Allow pop-ups to export PDF', 'neg'); setExportOpen(false); return; }
+    w.document.write(html); w.document.close();
+    setExportOpen(false);
+    toast && toast('Opening print dialog — choose "Save as PDF"', 'info');
   };
 
   if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh' }}>
-      <div className="spinner" />
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+      <Spinner lg />
     </div>
   );
 
   return (
-    <div className="transactions-page">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Transactions</h1>
-          <p className="page-subtitle">{transactions.length} total transactions</p>
+    <div>
+      <PageHead deps={[exportOpen, filtered.length]}>
+        <div style={{ position: 'relative' }}>
+          <button className="btn btn-outline" onClick={() => setExportOpen(o => !o)}>
+            <Icon name="download" size={17} /> <span className="hide-mobile">Export</span> <Icon name="chevronDown" size={14} />
+          </button>
+          {exportOpen && (
+            <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setExportOpen(false)} />
+              <div className="card" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 50, width: 230, padding: 6, boxShadow: 'var(--shadow-lg)' }}>
+                <div className="t-xs muted" style={{ padding: '6px 10px 4px' }}>{filtered.length} transaction{filtered.length !== 1 ? 's' : ''} · current filter</div>
+                <button className="menu-item" onClick={exportCSV}>
+                  <span className="cat-ic sm" style={{ background: 'var(--pos-soft)', color: 'var(--pos)' }}><Icon name="grid" size={15} /></span>
+                  <div><div className="fw7 t-sm">Export as CSV</div><div className="t-xs muted">Spreadsheet file</div></div>
+                </button>
+                <button className="menu-item" onClick={exportPDF}>
+                  <span className="cat-ic sm" style={{ background: 'var(--neg-soft)', color: 'var(--neg)' }}><Icon name="receipt" size={15} /></span>
+                  <div><div className="fw7 t-sm">Export as PDF</div><div className="t-xs muted">Printable statement</div></div>
+                </button>
+              </div>
+            </>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn btn-ghost" onClick={exportCSV} disabled={filtered.length === 0}>
-            <DownloadIcon /> CSV
-          </button>
-          <button className="btn btn-ghost" onClick={exportPDF} disabled={filtered.length === 0}>
-            <DownloadIcon /> PDF
-          </button>
-          <button className="btn btn-primary" onClick={() => setDrawerOpen(true)}>
-            <PlusIcon /> Add Transaction
-          </button>
-        </div>
+        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+          <Icon name="plus" size={18} /> <span className="hide-mobile">Add transaction</span>
+        </button>
+      </PageHead>
+
+      {/* Summary strip */}
+      <div className="cols-3 mb16">
+        <div className="card pad"><div className="stat" style={{ padding: 0 }}><div className="label"><Icon name="arrowDownRight" size={15} style={{ color: 'var(--pos)' }} />Income</div><div className="value pos tnum" style={{ fontSize: 22 }}>{fmtMoney(totals.income, currency)}</div></div></div>
+        <div className="card pad"><div className="stat" style={{ padding: 0 }}><div className="label"><Icon name="arrowUpRight" size={15} style={{ color: 'var(--neg)' }} />Expenses</div><div className="value neg tnum" style={{ fontSize: 22 }}>{fmtMoney(totals.expense, currency)}</div></div></div>
+        <div className="card pad"><div className="stat" style={{ padding: 0 }}><div className="label"><Icon name="wallet" size={15} />Net</div><div className="value tnum" style={{ fontSize: 22, color: totals.income - totals.expense >= 0 ? 'var(--pos)' : 'var(--neg)' }}>{fmtMoney(totals.income - totals.expense, currency)}</div></div></div>
       </div>
 
       {/* Filters */}
-      <div className="glass txn-filters">
-        <div className="txn-search-wrap">
-          <SearchIcon />
-          <input
-            className="txn-search"
-            placeholder="Search by description or category..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="txn-type-filter">
-          {['ALL', 'INCOME', 'EXPENSE'].map(t => (
-            <button
-              key={t}
-              className={`txn-filter-btn${filterType === t ? ' active' : ''}`}
-              onClick={() => setFilterType(t)}
-            >{t}</button>
-          ))}
+      <div className="card pad mb16">
+        <div className="row wrap gap12" style={{ alignItems: 'center' }}>
+          <div style={{ flex: 1, minWidth: 180 }}><SearchInput value={search} onChange={setSearch} placeholder="Search description or category…" /></div>
+          <Segmented value={filterType} accent onChange={setFilterType}
+            options={[{ value: 'all', label: 'All' }, { value: 'income', label: 'Income' }, { value: 'expense', label: 'Expense' }]} />
+          <div style={{ minWidth: 150 }}>
+            <Select value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+              <option value="all">All categories</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
+          <div style={{ minWidth: 140 }}>
+            <Select value={filterPeriod} onChange={e => setFilterPeriod(e.target.value)}>
+              <option value="all">All time</option>
+              <option value="thism">This month</option>
+              <option value="lastm">Last month</option>
+            </Select>
+          </div>
+          {hasFilters && <button className="btn btn-ghost btn-sm" onClick={clearFilters}><Icon name="x" size={15} /> Clear</button>}
         </div>
       </div>
 
-      {/* Table */}
-      <div className="glass txn-table-wrap">
+      {/* List grouped by date */}
+      <div className="card" style={{ padding: 8 }}>
         {filtered.length === 0 ? (
-          <div className="empty-state">
-            <EmptyIcon />
-            <h4>No transactions found</h4>
-            <p>{search || filterType !== 'ALL' ? 'Try adjusting your filters' : 'Add your first transaction to get started'}</p>
+          <EmptyState
+            icon="search"
+            title={hasFilters ? 'No matching transactions' : 'No transactions yet'}
+            body={hasFilters ? 'Try adjusting or clearing your filters to see more.' : 'Add your first transaction to start tracking your money.'}
+            action={hasFilters
+              ? <button className="btn btn-outline" onClick={clearFilters}>Clear filters</button>
+              : <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" size={17} /> Add transaction</button>}
+          />
+        ) : groups.map(([day, items]) => (
+          <div key={day} style={{ marginBottom: 6 }}>
+            <div className="between" style={{ padding: '12px 12px 6px' }}>
+              <span className="t-xs fw7" style={{ color: 'var(--text-3)', letterSpacing: '.04em', textTransform: 'uppercase' }}>{day}</span>
+              <span className="t-xs muted tnum">{items.length} item{items.length > 1 ? 's' : ''}</span>
+            </div>
+            {items.map(t => {
+              const c = catById(t.category_id);
+              return (
+                <div className="tx-row" key={t.id}>
+                  <CatIcon cat={c} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="fw7" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.description || c.name}</div>
+                    <div className="t-xs muted">{c.name} · {fmtDate(t.date)}</div>
+                  </div>
+                  <Money amount={t.amount} type={t.type === 'INCOME' ? 'income' : 'expense'} cur={currency} strong />
+                  <button
+                    className="icon-btn plain del-btn" title="Delete"
+                    disabled={deletingId === t.id}
+                    onClick={() => handleDelete(t.id)}
+                    style={{ width: 32, height: 32 }}
+                  >
+                    {deletingId === t.id ? <Spinner /> : <Icon name="trash" size={16} />}
+                  </button>
+                </div>
+              );
+            })}
           </div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th>Category</th>
-                  <th>Type</th>
-                  <th style={{ textAlign: 'right' }}>Amount</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(t => (
-                  <tr key={t.id}>
-                    <td className="txn-date">
-                      {new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </td>
-                    <td className="txn-desc">{t.description || <span style={{color:'var(--text-muted)'}}>—</span>}</td>
-                    <td>
-                      <span className="badge" style={{ background:'rgba(108,99,255,0.1)', color:'var(--accent)' }}>
-                        {categoryMap[t.category_id] || 'Unknown'}
-                      </span>
-                    </td>
-                    <td><span className={`badge badge-${t.type.toLowerCase()}`}>{t.type}</span></td>
-                    <td style={{ textAlign:'right', fontWeight:700, color: t.type==='INCOME' ? 'var(--green)' : 'var(--red)' }}>
-                      {t.type === 'INCOME' ? '+' : '-'}{fmt(t.amount)}
-                    </td>
-                    <td style={{ textAlign:'right' }}>
-                      <button
-                        className="btn btn-danger txn-delete"
-                        onClick={() => handleDelete(t.id)}
-                        disabled={deletingId === t.id}
-                        title="Delete"
-                      >
-                        <TrashIcon />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        ))}
       </div>
 
-      {/* Drawer */}
-      {drawerOpen && (
-        <>
-          <div className="drawer-overlay" onClick={() => setDrawerOpen(false)} />
-          <AddTransactionDrawer
-            categories={categories}
-            onAdded={handleAdded}
-            onClose={() => setDrawerOpen(false)}
-          />
-        </>
+      {showAdd && (
+        <AddTransactionModal
+          categories={categories}
+          currency={currency}
+          onAdded={(txn) => { setTransactions(prev => [txn, ...prev]); setShowAdd(false); toast && toast('Transaction added', 'pos'); }}
+          onClose={() => setShowAdd(false)}
+        />
       )}
     </div>
   );
 }
 
-function AddTransactionDrawer({ categories, onAdded, onClose }) {
-  const [form, setForm] = useState({
-    amount: '',
-    type: 'EXPENSE',
-    category_id: categories[0]?.id || '',
-    date: new Date().toISOString().slice(0, 10),
-    description: '',
-  });
+function AddTransactionModal({ categories, currency, onAdded, onClose }) {
+  const [type, setType]       = useState('EXPENSE');
+  const [amount, setAmount]   = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [date, setDate]       = useState(new Date().toISOString().slice(0, 10));
+  const [description, setDescription] = useState('');
+  const [errors, setErrors]   = useState({});
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
-  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+  const options = categories.filter(c => c.type === type);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!form.amount || isNaN(form.amount) || Number(form.amount) <= 0) {
-      setError('Please enter a valid amount.');
-      return;
-    }
+    e?.preventDefault();
+    const errs = {};
+    if (!amount || isNaN(amount) || Number(amount) <= 0) errs.amount = 'Enter a valid amount greater than 0';
+    if (!categoryId) errs.category_id = 'Select a category';
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
     setLoading(true);
     try {
       const { data } = await api.post('/api/v1/transactions/', {
-        amount: parseFloat(form.amount),
-        type: form.type,
-        category_id: form.category_id,
-        date: new Date(form.date).toISOString(),
-        description: form.description,
+        amount: parseFloat(amount),
+        type,
+        category_id: categoryId,
+        date: new Date(date + 'T12:00:00').toISOString(),
+        description: description.trim(),
       });
       onAdded(data);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to add transaction.');
+      setErrors({ amount: err.response?.data?.detail || 'Failed to save transaction.' });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="drawer">
-      <div className="drawer-header">
-        <h3>Add Transaction</h3>
-        <button className="modal-close" onClick={onClose}>✕</button>
+    <Modal
+      title="Add transaction"
+      sub="Record income or an expense"
+      onClose={onClose}
+      icon="plus"
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={loading}>
+            {loading ? <Spinner /> : <Icon name="check" size={17} />} Save transaction
+          </button>
+        </>
+      }
+    >
+      <Segmented
+        value={type === 'EXPENSE' ? 'expense' : 'income'}
+        accent
+        onChange={v => { setType(v.toUpperCase()); setCategoryId(''); }}
+        options={[{ value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }]}
+      />
+
+      <Field label="Amount" error={errors.amount}>
+        <TextInput
+          affix={currencySymbol(currency)} type="number" inputMode="decimal" step="0.01" placeholder="0.00"
+          value={amount} error={errors.amount} onChange={e => setAmount(e.target.value)} autoFocus
+        />
+      </Field>
+
+      <Field label="Category" error={errors.category_id}>
+        <Select value={categoryId} error={errors.category_id} onChange={e => setCategoryId(e.target.value)}>
+          <option value="" disabled>Select a category…</option>
+          {options.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </Select>
+      </Field>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <Field label="Date">
+          <input className="input" type="date" value={date} max={new Date().toISOString().slice(0, 10)} onChange={e => setDate(e.target.value)} />
+        </Field>
+        <Field label="Description (optional)">
+          <TextInput placeholder="e.g. Grocery run" value={description} onChange={e => setDescription(e.target.value)} />
+        </Field>
       </div>
-
-      {error && <div className="error-msg">{error}</div>}
-
-      <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label className="form-label">Type</label>
-          <div className="type-toggle">
-            <button type="button" className={form.type === 'INCOME' ? 'active-income' : ''} onClick={() => set('type','INCOME')}>Income</button>
-            <button type="button" className={form.type === 'EXPENSE' ? 'active-expense' : ''} onClick={() => set('type','EXPENSE')}>Expense</button>
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Amount</label>
-          <input className="input" type="number" step="0.01" min="0.01" placeholder="0.00" value={form.amount} onChange={e => set('amount', e.target.value)} required />
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Category</label>
-          <select className="input" value={form.category_id} onChange={e => set('category_id', e.target.value)} required>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Date</label>
-          <input className="input" type="date" value={form.date} onChange={e => set('date', e.target.value)} required />
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Description</label>
-          <input className="input" type="text" placeholder="e.g. Walmart, Salary..." value={form.description} onChange={e => set('description', e.target.value)} />
-        </div>
-
-        <button className="btn btn-primary" style={{ width:'100%', justifyContent:'center', marginTop:8 }} type="submit" disabled={loading}>
-          {loading ? <span className="spinner" style={{width:15,height:15,borderWidth:2}} /> : <PlusIcon />}
-          Save Transaction
-        </button>
-      </form>
-    </div>
+    </Modal>
   );
 }
-
-const PlusIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-const TrashIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>;
-const SearchIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',flexShrink:0}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
-const EmptyIcon = () => <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
-const DownloadIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;

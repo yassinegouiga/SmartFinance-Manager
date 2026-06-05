@@ -1,282 +1,300 @@
 import { useEffect, useState, useMemo } from 'react';
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
-} from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import './Dashboard.css';
+import { useAuth } from '../context/AuthContext';
+import { useCategories } from '../context/CategoriesContext';
+import Icon from '../components/Icons/Icon';
+import { Progress, EmptyState, Spinner, Money, PageHead, CatIcon } from '../components/UI';
+import { ChartCanvas, chartTheme, gridOpts } from '../components/Chart';
+import { fmtMoney, fmtDate } from '../utils/format';
 
-const CATEGORY_COLORS = [
-  '#6C63FF','#3ECFCF','#f59e0b','#ef4444','#22c55e','#3b82f6','#ec4899','#8b5cf6',
-];
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
 
-const fmt = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n ?? 0);
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function monthTotals(txns, ref) {
+  let income = 0, expense = 0;
+  txns.forEach(t => {
+    const d = new Date(t.date);
+    if (d.getMonth() === ref.getMonth() && d.getFullYear() === ref.getFullYear()) {
+      if (t.type === 'INCOME') income += t.amount; else expense += t.amount;
+    }
+  });
+  return { income, expense, net: income - expense };
+}
+
+const pctDelta = (cur, prev) => (prev > 0 ? Math.round(((cur - prev) / prev) * 100) : 0);
+
+function StatCard({ label, icon, iconBg, iconColor, value, delta, deltaUp }) {
+  return (
+    <div className="card stat">
+      <div className="stat-ic" style={{ background: iconBg, color: iconColor }}>
+        <Icon name={icon} size={19} />
+      </div>
+      <div className="label">{label}</div>
+      <div className="value tnum">{value}</div>
+      {delta != null && (
+        <div className="delta">
+          <span className={'badge ' + (deltaUp ? 'badge-pos' : 'badge-neg')}>
+            <Icon name={deltaUp ? 'trendUp' : 'trendDown'} size={13} />{delta}
+          </span>
+          <span className="t-xs muted" style={{ marginLeft: 8 }}>vs last month</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Dashboard() {
-  const [summary, setSummary] = useState(null);
+  const { profile, currency = 'USD' } = useAuth();
+  const { catById } = useCategories();
+  const navigate = useNavigate();
+
+  const [summary, setSummary]           = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [bills, setBills] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [bills, setBills]               = useState([]);
+  const [budgets, setBudgets]           = useState([]);
+  const [loading, setLoading]           = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.get('/api/v1/dashboard/summary'),
-      api.get('/api/v1/transactions/', { params: { limit: 100 } }),
+      api.get('/api/v1/transactions/', { params: { limit: 500 } }),
       api.get('/api/v1/bills/'),
-      api.get('/api/v1/categories/'),
-    ]).then(([s, t, b, c]) => {
+      api.get('/api/v1/budgets/'),
+    ]).then(([s, t, b, bu]) => {
       setSummary(s.data);
       setTransactions(t.data);
       setBills(b.data);
-      setCategories(c.data);
+      setBudgets(bu.data);
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
 
-  const categoryMap = useMemo(() => {
-    const m = {};
-    categories.forEach(c => { m[c.id] = c.name; });
-    return m;
-  }, [categories]);
+  const now = new Date();
+  const thisM = useMemo(() => monthTotals(transactions, now), [transactions]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lastM = useMemo(() => monthTotals(transactions, new Date(now.getFullYear(), now.getMonth() - 1, 1)), [transactions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const chartData = useMemo(() => {
-    const byMonth = {};
-    transactions.forEach(t => {
-      const d = new Date(t.date);
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      if (!byMonth[key]) byMonth[key] = { month: MONTHS[d.getMonth()], income: 0, expense: 0, _sort: d.getFullYear() * 12 + d.getMonth() };
-      if (t.type === 'INCOME') byMonth[key].income += t.amount;
-      else byMonth[key].expense += t.amount;
-    });
-    return Object.values(byMonth).sort((a, b) => a._sort - b._sort).slice(-6);
-  }, [transactions]);
+  const flow = useMemo(() => {
+    const months = [];
+    for (let i = 4; i >= 0; i--) {
+      const ref = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const t = monthTotals(transactions, ref);
+      months.push({ label: ref.toLocaleDateString('en-US', { month: 'short' }), income: t.income, expense: t.expense });
+    }
+    return months;
+  }, [transactions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const donutData = useMemo(() => {
-    const byCat = {};
-    transactions.filter(t => t.type === 'EXPENSE').forEach(t => {
-      const name = categoryMap[t.category_id] || 'Other';
-      byCat[name] = (byCat[name] || 0) + t.amount;
-    });
-    return Object.entries(byCat).map(([name, value]) => ({ name, value: +value.toFixed(2) }));
-  }, [transactions, categoryMap]);
-
-  const recent = useMemo(() =>
-    [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5),
-    [transactions]
+  const recent = useMemo(
+    () => [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6),
+    [transactions],
   );
 
-  const activeBills = bills.filter(b => b.status !== 'PAID').length;
+  const upcomingBills = useMemo(
+    () => bills.filter(b => b.status !== 'PAID').sort((a, b) => (a.due_day || 1) - (b.due_day || 1)).slice(0, 4),
+    [bills],
+  );
+
+  const topBudgets = useMemo(
+    () => budgets
+      .map(b => ({ ...b, cat: catById(b.category_id) }))
+      .sort((a, b) => (b.spent_amount / (b.monthly_limit || 1)) - (a.spent_amount / (a.monthly_limit || 1)))
+      .slice(0, 4),
+    [budgets, catById],
+  );
+
+  // The summary endpoint exposes figures under `breakdown` (current build) or
+  // `current_month_summary` (older build) — read whichever is present.
+  const breakdown = summary?.breakdown || summary?.current_month_summary || {};
+  const income  = breakdown.total_income  ?? 0;
+  const expense = breakdown.total_expense ?? 0;
+  const balance = breakdown.total_balance ?? 0;
+  const net = income - expense;
+  const savingsRate = income > 0 ? Math.round((net / income) * 100) : 0;
+  const firstName = profile?.first_name || 'there';
+
+  const th = chartTheme();
+  const flowData = {
+    labels: flow.map(m => m.label),
+    datasets: [
+      { label: 'Income',   data: flow.map(m => m.income),  backgroundColor: th.accent,        borderRadius: 6, maxBarThickness: 22 },
+      { label: 'Expenses', data: flow.map(m => m.expense), backgroundColor: th.faint + '66',  borderRadius: 6, maxBarThickness: 22 },
+    ],
+  };
 
   if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh' }}>
-      <div className="spinner" />
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+      <Spinner lg />
     </div>
   );
 
+  const hasFlow = flow.some(m => m.income || m.expense);
+
   return (
-    <div className="dashboard">
-      <div className="page-header">
+    <div>
+      <PageHead>
+        <button className="btn btn-outline hide-mobile" onClick={() => navigate('/analytics')}>
+          <Icon name="bars" size={17} /> Reports
+        </button>
+        <button className="btn btn-primary" onClick={() => navigate('/transactions')}>
+          <Icon name="plus" size={18} /> <span className="hide-mobile">Add transaction</span>
+        </button>
+      </PageHead>
+
+      {/* Greeting hero */}
+      <div className="between mb24" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Your financial overview</p>
-        </div>
-      </div>
-
-      {/* Stat Cards */}
-      <div className="dashboard-stats">
-        <StatCard
-          label="Total Balance"
-          value={fmt(summary?.total_balance ?? 0)}
-          icon={<BalanceIcon />}
-          color="accent"
-          trend={summary?.total_balance >= 0 ? 'up' : 'down'}
-        />
-        <StatCard
-          label="Monthly Income"
-          value={fmt(summary?.total_income ?? 0)}
-          icon={<IncomeIcon />}
-          color="green"
-        />
-        <StatCard
-          label="Monthly Expenses"
-          value={fmt(summary?.total_expense ?? 0)}
-          icon={<ExpenseIcon />}
-          color="red"
-        />
-        <StatCard
-          label="Active Bills"
-          value={activeBills}
-          icon={<BillIcon />}
-          color="yellow"
-          suffix="unpaid"
-        />
-      </div>
-
-      {/* Charts row */}
-      <div className="dashboard-charts">
-        <div className="glass dashboard-chart-main">
-          <div className="chart-header">
-            <h3 className="chart-title">Income vs Expenses</h3>
-            <span className="chart-subtitle">Last 6 months</span>
+          <div className="t-sm fw7" style={{ color: 'var(--accent-2)', letterSpacing: '.02em' }}>
+            {now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
           </div>
-          {chartData.length === 0 ? (
-            <div className="empty-state" style={{ padding: '40px 0' }}>
-              <EmptyChartIcon />
-              <h4>No data yet</h4>
-              <p>Add transactions to see your trend</p>
+          <h1 style={{ fontSize: 30, marginTop: 6 }}>{greeting()}, {firstName} 👋</h1>
+          <p className="muted mt8" style={{ fontSize: 14.5 }}>Here's how your money is doing this month.</p>
+        </div>
+        <div className="card pad center gap12 hide-mobile" style={{ padding: '14px 18px' }}>
+          <div className="cat-ic" style={{ background: net >= 0 ? 'var(--pos-soft)' : 'var(--neg-soft)', color: net >= 0 ? 'var(--pos)' : 'var(--neg)' }}>
+            <Icon name={net >= 0 ? 'trendUp' : 'trendDown'} size={20} />
+          </div>
+          <div>
+            <div className="t-xs muted">Net this month</div>
+            <div className="fw8 tnum" style={{ fontSize: 18, color: net >= 0 ? 'var(--pos)' : 'var(--neg)' }}>
+              {net >= 0 ? '+' : '−'}{fmtMoney(Math.abs(net), currency)}
             </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <XAxis dataKey="month" tick={{ fill: '#4a5568', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#4a5568', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => `$${v >= 1000 ? (v/1000).toFixed(0)+'k' : v}`} />
-                <Tooltip
-                  contentStyle={{ background: '#0f1320', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, fontSize: 13 }}
-                  formatter={(v) => [fmt(v)]}
-                />
-                <Area type="monotone" dataKey="income" stroke="#22c55e" strokeWidth={2} fill="url(#incomeGrad)" name="Income" />
-                <Area type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} fill="url(#expenseGrad)" name="Expenses" />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        <div className="glass dashboard-chart-side">
-          <div className="chart-header">
-            <h3 className="chart-title">Spending by Category</h3>
           </div>
-          {donutData.length === 0 ? (
-            <div className="empty-state" style={{ padding: '40px 0' }}>
-              <EmptyChartIcon />
-              <h4>No expenses yet</h4>
+        </div>
+      </div>
+
+      {/* Stat cards */}
+      <div className="cols-4 keep2 mb16">
+        <StatCard label="Total balance" icon="wallet" iconBg="var(--accent-soft)" iconColor="var(--accent-2)"
+          value={fmtMoney(balance, currency, { compact: true })}
+          delta={lastM.net !== 0 ? Math.abs(pctDelta(thisM.net, lastM.net)) + '%' : null} deltaUp={thisM.net >= lastM.net} />
+        <StatCard label="Monthly income" icon="arrowDownRight" iconBg="var(--pos-soft)" iconColor="var(--pos)"
+          value={fmtMoney(income, currency, { compact: true })}
+          delta={lastM.income > 0 ? Math.abs(pctDelta(thisM.income, lastM.income)) + '%' : null} deltaUp={thisM.income >= lastM.income} />
+        <StatCard label="Monthly expenses" icon="arrowUpRight" iconBg="var(--neg-soft)" iconColor="var(--neg)"
+          value={fmtMoney(expense, currency, { compact: true })}
+          delta={lastM.expense > 0 ? Math.abs(pctDelta(thisM.expense, lastM.expense)) + '%' : null} deltaUp={thisM.expense < lastM.expense} />
+        <StatCard label="Savings rate" icon="piggy" iconBg="var(--info-soft)" iconColor="var(--info)"
+          value={savingsRate + '%'} />
+      </div>
+
+      {/* Main grid */}
+      <div className="dash-grid">
+        {/* Left column */}
+        <div className="grid" style={{ gap: 16 }}>
+          <div className="card pad">
+            <div className="card-head">
+              <div style={{ flex: 1 }}>
+                <h3>Cash flow</h3>
+                <div className="sub">Income vs expenses · last 5 months</div>
+              </div>
+              <div className="center gap12 t-xs fw7">
+                <span className="center" style={{ gap: 6 }}><i style={{ width: 9, height: 9, borderRadius: 3, background: 'var(--accent-2)', display: 'inline-block' }} />Income</span>
+                <span className="center" style={{ gap: 6 }}><i style={{ width: 9, height: 9, borderRadius: 3, background: 'var(--text-faint)', display: 'inline-block' }} />Expenses</span>
+              </div>
             </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie
-                  data={donutData}
-                  cx="50%"
-                  cy="45%"
-                  innerRadius={55}
-                  outerRadius={85}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {donutData.map((_, i) => (
-                    <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Legend
-                  formatter={(v) => <span style={{ fontSize: 12, color: '#8892a4' }}>{v}</span>}
-                  iconType="circle"
-                  iconSize={8}
-                />
-                <Tooltip
-                  contentStyle={{ background: '#0f1320', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, fontSize: 13 }}
-                  formatter={(v) => [fmt(v)]}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-
-      {/* Recent Transactions */}
-      <div className="glass dashboard-recent">
-        <div className="chart-header">
-          <h3 className="chart-title">Recent Transactions</h3>
-        </div>
-        {recent.length === 0 ? (
-          <div className="empty-state">
-            <EmptyTxnIcon />
-            <h4>No transactions yet</h4>
-            <p>Head to Transactions to add your first entry</p>
+            {hasFlow ? (
+              <ChartCanvas type="bar" data={flowData} options={gridOpts(th, true, currency)} height={240} />
+            ) : (
+              <EmptyState icon="bars" title="No data yet" body="Add transactions to see your cash flow" />
+            )}
           </div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th>Category</th>
-                  <th>Type</th>
-                  <th style={{ textAlign: 'right' }}>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map(t => (
-                  <tr key={t.id}>
-                    <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                      {new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </td>
-                    <td style={{ fontWeight: 500 }}>{t.description || '—'}</td>
-                    <td>
-                      <span className="badge" style={{ background: 'rgba(108,99,255,0.12)', color: 'var(--accent)' }}>
-                        {categoryMap[t.category_id] || 'Unknown'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge badge-${t.type.toLowerCase()}`}>{t.type}</span>
-                    </td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: t.type === 'INCOME' ? 'var(--green)' : 'var(--red)' }}>
-                      {t.type === 'INCOME' ? '+' : '-'}{fmt(t.amount)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
-function StatCard({ label, value, icon, color, trend, suffix }) {
-  const colors = {
-    accent: { bg: 'rgba(108,99,255,0.1)', border: 'rgba(108,99,255,0.2)', icon: '#6C63FF' },
-    green:  { bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.2)',  icon: '#22c55e' },
-    red:    { bg: 'rgba(239,68,68,0.1)',  border: 'rgba(239,68,68,0.2)',  icon: '#ef4444' },
-    yellow: { bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.2)', icon: '#f59e0b' },
-  };
-  const c = colors[color];
-  return (
-    <div className="glass stat-card">
-      <div className="stat-card-icon" style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.icon }}>
-        {icon}
-      </div>
-      <div className="stat-card-body">
-        <span className="stat-card-label">{label}</span>
-        <div className="stat-card-value-row">
-          <span className="stat-card-value">{value}</span>
-          {suffix && <span className="stat-card-suffix">{suffix}</span>}
-          {trend && (
-            <span className={`stat-card-trend ${trend}`}>
-              {trend === 'up' ? '↑' : '↓'}
-            </span>
-          )}
+          <div className="card pad">
+            <div className="card-head">
+              <h3 style={{ flex: 1 }}>Recent transactions</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/transactions')}>
+                View all <Icon name="chevronRight" size={15} />
+              </button>
+            </div>
+            {recent.length === 0 ? (
+              <EmptyState icon="exchange" title="No transactions yet" body="Add your first income or expense" />
+            ) : (
+              <div style={{ margin: '0 -6px' }}>
+                {recent.map(t => {
+                  const c = catById(t.category_id);
+                  return (
+                    <div className="tx-row" key={t.id}>
+                      <CatIcon cat={c} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="fw7" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {t.description || c.name}
+                        </div>
+                        <div className="t-xs muted">{c.name} · {fmtDate(t.date, 'rel')}</div>
+                      </div>
+                      <Money amount={t.amount} type={t.type === 'INCOME' ? 'income' : 'expense'} cur={currency} strong />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right column */}
+        <div className="grid" style={{ gap: 16 }}>
+          <div className="card pad">
+            <div className="card-head">
+              <div style={{ flex: 1 }}>
+                <h3>Budgets</h3>
+                <div className="sub">{now.toLocaleDateString('en-US', { month: 'long' })}</div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/budgets')}>Manage</button>
+            </div>
+            {topBudgets.length === 0 ? (
+              <EmptyState icon="wallet" title="No budgets set" body="Create budgets to track your spending" />
+            ) : (
+              <div className="grid" style={{ gap: 16 }}>
+                {topBudgets.map(b => {
+                  const over = b.spent_amount > b.monthly_limit;
+                  return (
+                    <div key={b.id}>
+                      <div className="between" style={{ marginBottom: 8 }}>
+                        <span className="center gap8"><CatIcon cat={b.cat} size="sm" /><span className="fw7 t-sm">{b.cat.name}</span></span>
+                        <span className="t-sm tnum" style={{ color: over ? 'var(--neg)' : 'var(--text-2)' }}>
+                          {fmtMoney(b.spent_amount, currency)} <span className="faint">/ {fmtMoney(b.monthly_limit, currency)}</span>
+                        </span>
+                      </div>
+                      <Progress value={b.spent_amount} max={b.monthly_limit} color={b.cat.color} thin />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="card pad">
+            <div className="card-head">
+              <h3 style={{ flex: 1 }}>Upcoming bills</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/bills')}>All bills</button>
+            </div>
+            {upcomingBills.length === 0 ? (
+              <div className="center" style={{ color: 'var(--text-3)', gap: 8, padding: '8px 0' }}>
+                <Icon name="checkCircle" size={18} style={{ color: 'var(--pos)' }} />
+                All bills paid this month 🎉
+              </div>
+            ) : (
+              <div className="grid" style={{ gap: 4, margin: '0 -6px' }}>
+                {upcomingBills.map(b => {
+                  const c = b.category_id ? catById(b.category_id) : { icon: 'receipt', color: 'var(--accent)' };
+                  const dueDate = new Date(now.getFullYear(), now.getMonth(), b.due_day || 1)
+                    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  return (
+                    <div className="tx-row" key={b.id} style={{ padding: '10px 6px' }}>
+                      <CatIcon cat={c} size="sm" />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="fw7 t-sm">{b.name}</div>
+                        <div className="t-xs muted">Due {dueDate} · {b.frequency}</div>
+                      </div>
+                      <span className="fw7 tnum t-sm">{fmtMoney(b.amount, currency)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
-const BalanceIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>;
-const IncomeIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
-const ExpenseIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>;
-const BillIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
-const EmptyChartIcon = () => <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
-const EmptyTxnIcon = () => <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;

@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
-import { signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { useEffect, useState, useRef } from 'react';
+import { signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import './Settings.css';
+import Icon from '../components/Icons/Icon';
+import { Modal, Field, TextInput, Select, Spinner, ConfirmDialog, useToast } from '../components/UI';
 
 const CURRENCIES = [
   { code: 'USD', label: 'USD — US Dollar ($)' },
@@ -20,31 +21,97 @@ const CURRENCIES = [
   { code: 'AED', label: 'AED — UAE Dirham' },
 ];
 
+// Read an image file and downscale it to a small square avatar data URL,
+// so it fits comfortably in the profile's avatar_url text field (no storage infra).
+function fileToAvatarDataURL(file, size = 256) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const scale = Math.max(size / img.width, size / img.height);
+        const w = img.width * scale, h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function Section({ title, sub, danger, children }) {
+  return (
+    <div
+      className="card pad mb16"
+      style={danger ? { borderColor: 'var(--neg)', background: 'var(--neg-soft)' } : undefined}
+    >
+      <div style={{ marginBottom: 16 }}>
+        <div className="center gap8">
+          {danger && <Icon name="alert" size={17} style={{ color: 'var(--neg)' }} />}
+          <h3 style={{ fontSize: 15.5, color: danger ? 'var(--neg)' : 'var(--text)' }}>{title}</h3>
+        </div>
+        {sub && <div className="t-xs muted" style={{ marginTop: 4 }}>{sub}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Rowi({ label, sub, children, last }) {
+  return (
+    <div
+      className="between"
+      style={{
+        padding: '14px 0',
+        borderBottom: last ? 'none' : '1px solid var(--border-soft)',
+        gap: 16,
+        alignItems: 'center',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div className="fw7 t-sm">{label}</div>
+        {sub && <div className="t-xs muted" style={{ marginTop: 3 }}>{sub}</div>}
+      </div>
+      <div className="center gap12" style={{ flexShrink: 0 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
-  const { user, profile, theme, toggleTheme, currency, updateProfile, updateCurrency, deleteAccount } = useAuth();
+  const { user, profile, theme, toggleTheme, currency, updateProfile, updateAvatar, updateCurrency, deleteAccount } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
 
   // Profile
-  const [firstName, setFirstName]     = useState('');
-  const [lastName, setLastName]       = useState('');
+  const [firstName, setFirstName]         = useState('');
+  const [lastName, setLastName]           = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
-  const [profileMsg, setProfileMsg]   = useState(null);
-
-  // Preferences
-  const [currencySaving, setCurrencySaving] = useState(false);
+  const [avatarSaving, setAvatarSaving]   = useState(false);
+  const fileRef = useRef(null);
 
   // Security
-  const [resetSent, setResetSent]     = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
+  const [pwModal, setPwModal]             = useState(false);
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
+
+  // Currency
+  const [currencySaving, setCurrencySaving] = useState(false);
 
   // Data / Delete
   const [exporting, setExporting]     = useState(false);
   const [showDelete, setShowDelete]   = useState(false);
   const [deleteText, setDeleteText]   = useState('');
   const [deleting, setDeleting]       = useState(false);
-  const [deleteError, setDeleteError] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
 
-  // Sync name fields when profile loads
   useEffect(() => {
     if (profile) {
       setFirstName(profile.first_name || '');
@@ -52,33 +119,57 @@ export default function Settings() {
     }
   }, [profile]);
 
+  const dirty = firstName !== (profile?.first_name || '') || lastName !== (profile?.last_name || '');
+
   const handleSaveProfile = async () => {
+    if (!firstName.trim()) { toast && toast("First name can't be empty", 'neg'); return; }
     setProfileSaving(true);
-    setProfileMsg(null);
     try {
-      await updateProfile(firstName, lastName);
-      setProfileMsg({ ok: true, text: 'Profile updated.' });
+      await updateProfile(firstName.trim(), lastName.trim());
+      toast && toast('Profile saved', 'pos');
     } catch {
-      setProfileMsg({ ok: false, text: 'Failed to update profile.' });
+      toast && toast('Failed to update profile', 'neg');
     } finally {
       setProfileSaving(false);
     }
   };
 
-  const handleCurrencyChange = async (e) => {
-    setCurrencySaving(true);
-    try { await updateCurrency(e.target.value); }
-    catch { /* reverted in context */ }
-    finally { setCurrencySaving(false); }
+  const handlePickAvatar = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ''; // allow re-picking the same file later
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast && toast('Please choose an image file', 'neg'); return; }
+    setAvatarSaving(true);
+    try {
+      const dataUrl = await fileToAvatarDataURL(file);
+      await updateAvatar(dataUrl);
+      toast && toast('Profile photo updated', 'pos');
+    } catch {
+      toast && toast('Failed to update photo', 'neg');
+    } finally {
+      setAvatarSaving(false);
+    }
   };
 
-  const handlePasswordReset = async () => {
-    setResetLoading(true);
+  const handleRemoveAvatar = async () => {
+    setAvatarSaving(true);
     try {
-      await sendPasswordResetEmail(auth, user.email);
-      setResetSent(true);
-    } catch { /* silent */ }
-    finally { setResetLoading(false); }
+      await updateAvatar(null);
+      toast && toast('Profile photo removed', 'neg');
+    } catch {
+      toast && toast('Failed to remove photo', 'neg');
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
+
+  const handleCurrencyChange = async (e) => {
+    setCurrencySaving(true);
+    try {
+      await updateCurrency(e.target.value);
+      toast && toast('Currency updated', 'pos');
+    } catch { /* reverted in context */ }
+    finally { setCurrencySaving(false); }
   };
 
   const handleSignOut = async () => {
@@ -110,14 +201,18 @@ export default function Settings() {
       a.download = `smartfinance-export-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch { /* silent */ }
-    finally { setExporting(false); }
+      toast && toast('Export downloaded', 'pos');
+    } catch {
+      toast && toast('Export failed', 'neg');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleDeleteAccount = async () => {
     if (deleteText !== 'DELETE') return;
     setDeleting(true);
-    setDeleteError(null);
+    setDeleteError('');
     try {
       await deleteAccount();
       navigate('/login');
@@ -141,227 +236,285 @@ export default function Settings() {
   const isPasswordUser = profile?.auth_provider !== 'google.com';
 
   return (
-    <div className="settings-page">
-      <div className="settings-header">
-        <h1 className="settings-title">Settings</h1>
-        <p className="settings-subtitle">Manage your profile and account preferences</p>
-      </div>
+    <div style={{ maxWidth: 720, margin: '0 auto' }}>
 
-      <div className="settings-sections">
-
-        {/* ── Profile ─────────────────────────────────── */}
-        <section className="settings-card glass">
-          <div className="settings-card-head">
-            <h2 className="settings-card-title">Profile</h2>
-            <p className="settings-card-desc">Update your personal information</p>
-          </div>
-          <div className="settings-card-body">
-            <div className="settings-avatar-row">
-              <div className="settings-avatar">{initials}</div>
-              <div>
-                <p className="settings-avatar-name">{displayName || 'No name set'}</p>
-                <p className="settings-avatar-email">{user?.email}</p>
-              </div>
+      {/* ── Profile ──────────────────────────────────────── */}
+      <Section title="Profile" sub="Update your personal information">
+        <div className="center gap16 mb16" style={{ flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div
+              className="avatar"
+              style={{
+                width: 68, height: 68, fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px',
+                background: profile?.avatar_url ? 'transparent' : 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)',
+                color: '#fff',
+              }}
+            >
+              {avatarSaving
+                ? <Spinner />
+                : profile?.avatar_url
+                  ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : initials}
             </div>
-
-            <div className="settings-fields">
-              <div className="settings-two-col">
-                <div className="settings-field">
-                  <label className="settings-label">First Name</label>
-                  <input
-                    className="input"
-                    value={firstName}
-                    onChange={e => setFirstName(e.target.value)}
-                    placeholder="First name"
-                  />
-                </div>
-                <div className="settings-field">
-                  <label className="settings-label">Last Name</label>
-                  <input
-                    className="input"
-                    value={lastName}
-                    onChange={e => setLastName(e.target.value)}
-                    placeholder="Last name"
-                  />
-                </div>
-              </div>
-              <div className="settings-field">
-                <label className="settings-label">Email</label>
-                <input className="input settings-input-disabled" value={user?.email || ''} disabled />
-              </div>
-            </div>
-
-            {profileMsg && (
-              <p className={`settings-inline-msg ${profileMsg.ok ? 'ok' : 'err'}`}>{profileMsg.text}</p>
-            )}
-
-            <button className="btn-primary settings-save-btn" onClick={handleSaveProfile} disabled={profileSaving}>
-              {profileSaving ? 'Saving…' : 'Save Changes'}
+            <button
+              className="icon-btn"
+              onClick={() => fileRef.current && fileRef.current.click()}
+              title="Change photo"
+              disabled={avatarSaving}
+              style={{ position: 'absolute', bottom: -4, right: -4, width: 28, height: 28, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', borderColor: 'var(--bg-elev)' }}
+            >
+              <Icon name="edit" size={13} />
             </button>
+            <input ref={fileRef} type="file" accept="image/*" hidden onChange={handlePickAvatar} />
           </div>
-        </section>
-
-        {/* ── Preferences ─────────────────────────────── */}
-        <section className="settings-card glass">
-          <div className="settings-card-head">
-            <h2 className="settings-card-title">Preferences</h2>
-            <p className="settings-card-desc">Customize how SmartFinance looks and works</p>
-          </div>
-          <div className="settings-card-body">
-            <div className="settings-pref-row">
-              <div className="settings-pref-text">
-                <p className="settings-pref-label">Theme</p>
-                <p className="settings-pref-sub">Switch between dark and light mode</p>
-              </div>
-              <button className="settings-theme-btn" onClick={toggleTheme}>
-                {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-                <span>{theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="fw8" style={{ fontSize: 17 }}>{displayName || 'No name set'}</div>
+            <div className="t-sm muted">{user?.email}</div>
+            <div className="row gap8 mt8">
+              <button className="btn btn-outline btn-sm" onClick={() => fileRef.current && fileRef.current.click()} disabled={avatarSaving}>
+                <Icon name="upload" size={14} /> Upload photo
               </button>
-            </div>
-
-            <div className="settings-divider" />
-
-            <div className="settings-pref-row">
-              <div className="settings-pref-text">
-                <p className="settings-pref-label">Currency</p>
-                <p className="settings-pref-sub">Used for displaying monetary values</p>
-              </div>
-              <select
-                className="input settings-currency-select"
-                value={currency}
-                onChange={handleCurrencyChange}
-                disabled={currencySaving}
-              >
-                {CURRENCIES.map(c => (
-                  <option key={c.code} value={c.code}>{c.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </section>
-
-        {/* ── Security ────────────────────────────────── */}
-        <section className="settings-card glass">
-          <div className="settings-card-head">
-            <h2 className="settings-card-title">Security</h2>
-            <p className="settings-card-desc">Manage your password and sign-in sessions</p>
-          </div>
-          <div className="settings-card-body">
-            {isPasswordUser && (
-              <>
-                <div className="settings-pref-row">
-                  <div className="settings-pref-text">
-                    <p className="settings-pref-label">Password</p>
-                    <p className="settings-pref-sub">Send a reset link to {user?.email}</p>
-                  </div>
-                  {resetSent
-                    ? <span className="settings-inline-msg ok">Reset email sent!</span>
-                    : (
-                      <button className="settings-outline-btn" onClick={handlePasswordReset} disabled={resetLoading}>
-                        {resetLoading ? 'Sending…' : 'Reset Password'}
-                      </button>
-                    )
-                  }
-                </div>
-                <div className="settings-divider" />
-              </>
-            )}
-            <div className="settings-pref-row">
-              <div className="settings-pref-text">
-                <p className="settings-pref-label">Sign Out</p>
-                <p className="settings-pref-sub">Sign out of your account on this device</p>
-              </div>
-              <button className="settings-outline-btn" onClick={handleSignOut}>Sign Out</button>
-            </div>
-          </div>
-        </section>
-
-        {/* ── Data ────────────────────────────────────── */}
-        <section className="settings-card glass settings-card-danger-zone">
-          <div className="settings-card-head">
-            <h2 className="settings-card-title">Data</h2>
-            <p className="settings-card-desc">Export or permanently delete your account data</p>
-          </div>
-          <div className="settings-card-body">
-            <div className="settings-pref-row">
-              <div className="settings-pref-text">
-                <p className="settings-pref-label">Export All Data</p>
-                <p className="settings-pref-sub">Download your transactions, bills, budgets and saving pots as JSON</p>
-              </div>
-              <button className="settings-outline-btn" onClick={handleExport} disabled={exporting}>
-                {exporting ? 'Exporting…' : 'Export Data'}
-              </button>
-            </div>
-
-            <div className="settings-divider" />
-
-            <div className="settings-pref-row">
-              <div className="settings-pref-text">
-                <p className="settings-pref-label settings-danger-text">Delete Account</p>
-                <p className="settings-pref-sub">Permanently delete your account and all data. This cannot be undone.</p>
-              </div>
-              <button
-                className="settings-danger-btn"
-                onClick={() => { setShowDelete(true); setDeleteText(''); setDeleteError(null); }}
-              >
-                Delete Account
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* ── Delete Confirmation Modal ──────────────────── */}
-      {showDelete && (
-        <div className="modal-backdrop" onClick={() => setShowDelete(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Delete Account</h3>
-              <button className="modal-close" onClick={() => setShowDelete(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <p className="settings-delete-warning">
-                This will permanently delete your account and all your data — transactions, bills, budgets, and saving pots. <strong>This cannot be undone.</strong>
-              </p>
-              <p className="settings-delete-hint">Type <strong>DELETE</strong> to confirm:</p>
-              <input
-                className="input"
-                value={deleteText}
-                onChange={e => setDeleteText(e.target.value)}
-                placeholder="Type DELETE"
-                autoFocus
-              />
-              {deleteError && <p className="settings-inline-msg err" style={{ marginTop: 10 }}>{deleteError}</p>}
-            </div>
-            <div className="modal-footer">
-              <button className="settings-outline-btn" onClick={() => setShowDelete(false)}>Cancel</button>
-              <button
-                className="settings-danger-btn"
-                onClick={handleDeleteAccount}
-                disabled={deleteText !== 'DELETE' || deleting}
-              >
-                {deleting ? 'Deleting…' : 'Delete Account'}
-              </button>
+              {profile?.avatar_url && (
+                <button className="btn btn-ghost btn-sm" onClick={handleRemoveAvatar} disabled={avatarSaving}>
+                  <Icon name="trash" size={14} /> Remove
+                </button>
+              )}
             </div>
           </div>
         </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+          <Field label="First name">
+            <TextInput
+              icon="user"
+              placeholder="First name"
+              value={firstName}
+              onChange={e => setFirstName(e.target.value)}
+            />
+          </Field>
+          <Field label="Last name">
+            <TextInput
+              placeholder="Last name"
+              value={lastName}
+              onChange={e => setLastName(e.target.value)}
+            />
+          </Field>
+        </div>
+
+        <Field label="Email">
+          <TextInput
+            icon="mail"
+            value={user?.email || ''}
+            disabled
+            style={{ opacity: 0.65 }}
+          />
+        </Field>
+
+        <div className="row" style={{ justifyContent: 'flex-end', marginTop: 8 }}>
+          <button
+            className="btn btn-primary"
+            onClick={handleSaveProfile}
+            disabled={!dirty || profileSaving}
+          >
+            {profileSaving ? <Spinner /> : <Icon name="check" size={17} />}
+            Save changes
+          </button>
+        </div>
+      </Section>
+
+      {/* ── Preferences ──────────────────────────────────── */}
+      <Section title="Preferences" sub="Customise how SmartFinance looks and works">
+        <Rowi label="Appearance" sub="Choose between dark and light mode">
+          <div className="segmented accent">
+            <button className={theme === 'light' ? 'active' : ''} onClick={() => { if (theme !== 'light') toggleTheme(); }}>
+              <Icon name="sun" size={15} /> Light
+            </button>
+            <button className={theme === 'dark' ? 'active' : ''} onClick={() => { if (theme !== 'dark') toggleTheme(); }}>
+              <Icon name="moon" size={15} /> Dark
+            </button>
+          </div>
+        </Rowi>
+        <Rowi label="Currency" sub="Used for displaying monetary values" last>
+          <div style={{ minWidth: 190 }}>
+            <Select
+              value={currency}
+              onChange={handleCurrencyChange}
+              disabled={currencySaving}
+            >
+              {CURRENCIES.map(c => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+            </Select>
+          </div>
+        </Rowi>
+      </Section>
+
+      {/* ── Security ─────────────────────────────────────── */}
+      <Section title="Security" sub="Manage your password and sign-in sessions">
+        {isPasswordUser ? (
+          <Rowi label="Password" sub="Change your account password">
+            <button className="btn btn-outline btn-sm" onClick={() => setPwModal(true)}>
+              <Icon name="lock" size={15} /> Change
+            </button>
+          </Rowi>
+        ) : (
+          <Rowi label="Password" sub="You sign in with Google — password is managed there">
+            <span className="badge badge-muted"><Icon name="shield" size={13} /> Google account</span>
+          </Rowi>
+        )}
+        <Rowi label="Sign out" sub="End your session on this device" last>
+          <button className="btn btn-outline btn-sm" onClick={() => setLogoutConfirm(true)}>
+            <Icon name="logout" size={15} /> Sign out
+          </button>
+        </Rowi>
+      </Section>
+
+      {/* ── Data + Danger zone ───────────────────────────── */}
+      <Section title="Data" sub="Export or permanently delete your account data" danger>
+        <Rowi label="Export all data" sub="Download your transactions, bills, budgets and saving pots as JSON">
+          <button className="btn btn-outline btn-sm" onClick={handleExport} disabled={exporting}>
+            {exporting ? <Spinner /> : <Icon name="download" size={15} />}
+            {exporting ? 'Exporting…' : 'Export'}
+          </button>
+        </Rowi>
+        <Rowi
+          label="Delete account"
+          sub="Permanently delete your account and all data. This cannot be undone."
+          last
+        >
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={() => { setShowDelete(true); setDeleteText(''); setDeleteError(''); }}
+          >
+            <Icon name="trash" size={15} /> Delete
+          </button>
+        </Rowi>
+      </Section>
+
+      {/* Change password */}
+      {pwModal && <ChangePasswordModal onClose={() => setPwModal(false)} />}
+
+      {/* Sign out confirm */}
+      {logoutConfirm && (
+        <ConfirmDialog
+          title="Sign out?"
+          body="You'll need to sign in again to access your account."
+          confirmLabel="Sign out"
+          onConfirm={handleSignOut}
+          onClose={() => setLogoutConfirm(false)}
+        />
+      )}
+
+      {/* Delete account modal */}
+      {showDelete && (
+        <Modal
+          title="Delete your account?"
+          sub="This cannot be undone"
+          onClose={() => setShowDelete(false)}
+          icon="alert"
+          iconColor="var(--neg)"
+          footer={
+            <>
+              <button className="btn btn-ghost" onClick={() => setShowDelete(false)}>Cancel</button>
+              <button
+                className="btn btn-danger"
+                onClick={handleDeleteAccount}
+                disabled={deleteText !== 'DELETE' || deleting}
+              >
+                {deleting ? <Spinner /> : <Icon name="trash" size={17} />}
+                Delete account
+              </button>
+            </>
+          }
+        >
+          <div className="banner banner-neg">
+            <Icon name="alert" size={16} />
+            <span>
+              This will permanently remove your profile, transactions, budgets, pots and bills.
+            </span>
+          </div>
+
+          <Field label="Type DELETE to confirm" error={deleteError}>
+            <TextInput
+              placeholder="DELETE"
+              value={deleteText}
+              error={deleteError}
+              onChange={e => { setDeleteText(e.target.value); setDeleteError(''); }}
+              autoFocus
+            />
+          </Field>
+        </Modal>
       )}
     </div>
   );
 }
 
-const SunIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="5"/>
-    <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-    <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-  </svg>
-);
+function ChangePasswordModal({ onClose }) {
+  const toast = useToast();
+  const [current, setCurrent] = useState('');
+  const [next, setNext]       = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [errors, setErrors]   = useState({});
+  const [loading, setLoading] = useState(false);
 
-const MoonIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-  </svg>
-);
+  const handleSubmit = async (e) => {
+    e?.preventDefault();
+    const errs = {};
+    if (!current) errs.current = 'Enter your current password';
+    if (next.length < 6) errs.next = 'Use at least 6 characters';
+    if (next !== confirm) errs.confirm = "Passwords don't match";
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
+    setLoading(true);
+    try {
+      const cred = EmailAuthProvider.credential(auth.currentUser.email, current);
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      await updatePassword(auth.currentUser, next);
+      toast && toast('Password updated', 'pos');
+      onClose();
+    } catch (err) {
+      const code = err.code;
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        setErrors({ current: 'Current password is incorrect' });
+      } else if (code === 'auth/weak-password') {
+        setErrors({ next: 'Password is too weak' });
+      } else if (code === 'auth/too-many-requests') {
+        setErrors({ current: 'Too many attempts. Try again later.' });
+      } else {
+        setErrors({ confirm: 'Failed to update password. Please try again.' });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Change password"
+      sub="Enter your current password, then choose a new one"
+      onClose={onClose}
+      icon="lock"
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={loading}>
+            {loading ? <Spinner /> : <Icon name="check" size={17} />} Update password
+          </button>
+        </>
+      }
+    >
+      <Field label="Current password" error={errors.current}>
+        <TextInput icon="lock" type="password" placeholder="••••••••" value={current}
+          error={errors.current} onChange={e => { setCurrent(e.target.value); setErrors(s => ({ ...s, current: '' })); }} autoFocus />
+      </Field>
+      <Field label="New password" error={errors.next} hint="Use 6+ characters">
+        <TextInput icon="lock" type="password" placeholder="••••••••" value={next}
+          error={errors.next} onChange={e => { setNext(e.target.value); setErrors(s => ({ ...s, next: '' })); }} />
+      </Field>
+      <Field label="Confirm new password" error={errors.confirm}>
+        <TextInput icon="lock" type="password" placeholder="••••••••" value={confirm}
+          error={errors.confirm} onChange={e => { setConfirm(e.target.value); setErrors(s => ({ ...s, confirm: '' })); }} />
+      </Field>
+    </Modal>
+  );
+}

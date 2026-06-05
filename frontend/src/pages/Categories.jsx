@@ -1,248 +1,239 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import api from '../services/api';
-import './Categories.css';
+import { useCategories, iconForCategory } from '../context/CategoriesContext';
+import Icon from '../components/Icons/Icon';
+import { Modal, Field, TextInput, Segmented, EmptyState, Spinner, ConfirmDialog, CatIcon, IconPicker, PageHead, useToast } from '../components/UI';
 
-const PRESET_COLORS = [
-  '#10B981', '#EF4444', '#F59E0B', '#8B5CF6', '#3B82F6',
-  '#6C63FF', '#3ECFCF', '#EC4899', '#F97316', '#14B8A6',
+const PALETTE = [
+  '#10b981', '#34d399', '#60a5fa', '#fbbf24', '#fb7185',
+  '#a78bfa', '#f97316', '#06b6d4', '#ec4899', '#14b8a6',
 ];
 
 export default function Categories() {
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
+  const { categories, loading, refresh } = useCategories();
+  const toast = useToast();
+  const [modal, setModal]             = useState(null); // null | {} | { edit: cat }
+  const [delTarget, setDelTarget]     = useState(null);
   const [deleteError, setDeleteError] = useState('');
-
-  const fetchCategories = async () => {
-    try {
-      const { data } = await api.get('/api/v1/categories/');
-      setCategories(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchCategories(); }, []);
 
   const defaultCats = categories.filter(c => !c.user_id);
   const customCats  = categories.filter(c =>  c.user_id);
 
-  const handleSaved = (cat, isNew) => {
-    setCategories(prev =>
-      isNew ? [...prev, cat] : prev.map(c => c.id === cat.id ? cat : c)
-    );
-    setModalOpen(false);
-    setEditTarget(null);
+  const handleSaved = (isNew) => {
+    refresh();
+    setModal(null);
+    toast && toast(isNew ? 'Category created' : 'Category updated', 'pos');
   };
 
-  const handleEdit = (cat) => {
-    setEditTarget(cat);
-    setModalOpen(true);
-  };
-
-  const handleDelete = async (cat) => {
-    if (!window.confirm(`Delete category "${cat.name}"?`)) return;
-    setDeletingId(cat.id);
+  const handleDelete = async () => {
+    if (!delTarget) return;
     setDeleteError('');
     try {
-      await api.delete(`/api/v1/categories/${cat.id}`);
-      setCategories(prev => prev.filter(c => c.id !== cat.id));
+      await api.delete(`/api/v1/categories/${delTarget.id}`);
+      await refresh();
+      toast && toast('Category deleted', 'neg');
     } catch (err) {
       setDeleteError(err.response?.data?.detail || 'Failed to delete category.');
     } finally {
-      setDeletingId(null);
+      setDelTarget(null);
     }
   };
 
   if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh' }}>
-      <div className="spinner" />
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+      <Spinner lg />
     </div>
   );
 
   return (
-    <div className="categories-page">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Categories</h1>
-          <p className="page-subtitle">Manage how your transactions are organised</p>
-        </div>
-        <button className="btn btn-primary" onClick={() => { setEditTarget(null); setModalOpen(true); }}>
-          <PlusIcon /> Add Category
+    <div>
+      <PageHead>
+        <button className="btn btn-primary" onClick={() => setModal({})}>
+          <Icon name="plus" size={18} /> <span className="hide-mobile">Add category</span>
         </button>
-      </div>
+      </PageHead>
 
-      {deleteError && <div className="error-msg" style={{ marginBottom: 20 }}>{deleteError}</div>}
+      {deleteError && (
+        <div className="banner banner-neg mb16">
+          <Icon name="alert" size={16} />
+          <span>{deleteError}</span>
+        </div>
+      )}
 
-      <section className="cat-section">
-        <div className="cat-section-header">
-          <h3 className="cat-section-title">Default Categories</h3>
-          <span className="cat-section-sub">Built-in — cannot be edited or deleted</span>
+      {/* Default categories */}
+      <section style={{ marginBottom: 32 }}>
+        <div className="between mb12">
+          <span className="fw7" style={{ fontSize: 14 }}>Default categories</span>
+          <span className="t-sm muted">Built-in · read-only</span>
         </div>
         <div className="cat-grid">
-          {defaultCats.map(cat => (
-            <CategoryCard key={cat.id} cat={cat} readOnly />
-          ))}
+          {defaultCats.map(cat => <CatCard key={cat.id} cat={cat} readOnly />)}
         </div>
       </section>
 
-      <section className="cat-section">
-        <div className="cat-section-header">
-          <h3 className="cat-section-title">My Categories</h3>
-          <span className="cat-section-sub">{customCats.length} custom {customCats.length === 1 ? 'category' : 'categories'}</span>
+      {/* Custom categories */}
+      <section>
+        <div className="between mb12">
+          <span className="fw7" style={{ fontSize: 14 }}>My categories</span>
+          <span className="t-sm muted">{customCats.length} custom {customCats.length === 1 ? 'category' : 'categories'}</span>
         </div>
+
         {customCats.length === 0 ? (
-          <div className="empty-state glass">
-            <EmptyIcon />
-            <h4>No custom categories yet</h4>
-            <p>Click "Add Category" to create your own</p>
+          <div className="card">
+            <EmptyState
+              icon="grid"
+              title="No custom categories yet"
+              body="Add your own categories to organise transactions your way."
+              action={<button className="btn btn-primary" onClick={() => setModal({})}><Icon name="plus" size={17} /> Add category</button>}
+            />
           </div>
         ) : (
           <div className="cat-grid">
             {customCats.map(cat => (
-              <CategoryCard
-                key={cat.id}
-                cat={cat}
-                onEdit={() => handleEdit(cat)}
-                onDelete={() => handleDelete(cat)}
-                deleting={deletingId === cat.id}
-              />
+              <CatCard key={cat.id} cat={cat} onEdit={() => setModal({ edit: cat })} onDelete={() => setDelTarget(cat)} />
             ))}
+            <button className="add-tile" onClick={() => setModal({})}>
+              <div className="cat-ic lg" style={{ background: 'var(--accent-soft)', color: 'var(--accent-2)' }}>
+                <Icon name="plus" size={22} />
+              </div>
+              <span className="fw7" style={{ marginTop: 10 }}>Add category</span>
+              <span className="t-xs muted">Create a custom one</span>
+            </button>
           </div>
         )}
       </section>
 
-      {modalOpen && (
-        <CategoryModal
-          category={editTarget}
-          onSaved={handleSaved}
-          onClose={() => { setModalOpen(false); setEditTarget(null); }}
+      {modal !== null && (
+        <CategoryModal editing={modal.edit || null} onSaved={handleSaved} onClose={() => setModal(null)} />
+      )}
+
+      {delTarget && (
+        <ConfirmDialog
+          title="Delete category?"
+          body={`"${delTarget.name}" will be removed. Existing transactions keep their record but the category won't be selectable.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={handleDelete}
+          onClose={() => setDelTarget(null)}
         />
       )}
     </div>
   );
 }
 
-function CategoryCard({ cat, readOnly, onEdit, onDelete, deleting }) {
+function CatCard({ cat, readOnly, onEdit, onDelete }) {
+  const typeBadge = cat.type === 'INCOME' ? 'badge-pos' : 'badge-muted';
+  const typeLabel = cat.type === 'INCOME' ? 'Income' : 'Expense';
+
   return (
-    <div className="cat-card glass">
-      <div className="cat-card-top">
-        <div className="cat-color-dot" style={{ background: cat.color || '#6C63FF' }} />
-        <div className="cat-info">
-          <span className="cat-name">{cat.name}</span>
-          <span className={`badge badge-${cat.type.toLowerCase()}`}>{cat.type}</span>
-        </div>
+    <div className="card pad cat-card" style={{ position: 'relative' }}>
+      <div className="between" style={{ alignItems: 'flex-start' }}>
+        <CatIcon cat={cat} size="lg" />
+        <span className={'badge ' + typeBadge}>{typeLabel}</span>
       </div>
-      {!readOnly && (
-        <div className="cat-card-actions">
-          <button className="btn btn-ghost cat-action-btn" onClick={onEdit} title="Edit">
-            <EditIcon />
-          </button>
-          <button className="btn btn-danger cat-action-btn" onClick={onDelete} disabled={deleting} title="Delete">
-            {deleting ? <span className="spinner" style={{ width:12, height:12, borderWidth:2 }} /> : <TrashIcon />}
-          </button>
+
+      <div className="fw8 mt12" style={{ fontSize: 15 }}>{cat.name}</div>
+
+      {readOnly ? (
+        <div className="t-xs muted" style={{ marginTop: 4 }}>Built-in</div>
+      ) : (
+        <div className="center gap8" style={{ marginTop: 14, justifyContent: 'flex-end' }}>
+          <button className="icon-btn plain" style={{ width: 30, height: 30 }} onClick={onEdit} title="Edit"><Icon name="edit" size={15} /></button>
+          <button className="icon-btn plain del-cat" style={{ width: 30, height: 30 }} onClick={onDelete} title="Delete"><Icon name="trash" size={15} /></button>
         </div>
       )}
     </div>
   );
 }
 
-function CategoryModal({ category, onSaved, onClose }) {
-  const isEdit = !!category;
+function CategoryModal({ editing, onSaved, onClose }) {
+  const isEdit = !!editing;
   const [form, setForm] = useState({
-    name:  category?.name  || '',
-    type:  category?.type  || 'EXPENSE',
-    color: category?.color || PRESET_COLORS[0],
+    name:  editing?.name  || '',
+    type:  editing?.type  || 'EXPENSE',
+    color: editing?.color || PALETTE[0],
+    icon:  editing?.icon  || '',
   });
+  const [errors, setErrors]   = useState({});
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
-
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
+  // Empty icon = auto-infer from the name; an explicit pick overrides it.
+  const effectiveIcon = form.icon || iconForCategory(form.name, 0);
+  const previewCat  = { icon: effectiveIcon, color: form.color };
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.name.trim()) { setError('Name is required.'); return; }
+    e?.preventDefault();
+    const errs = {};
+    if (!form.name.trim()) errs.name = 'Give your category a name';
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
     setLoading(true);
-    setError('');
     try {
-      if (isEdit) {
-        const { data } = await api.put(`/api/v1/categories/${category.id}`, form);
-        onSaved(data, false);
-      } else {
-        const { data } = await api.post('/api/v1/categories/', form);
-        onSaved(data, true);
-      }
+      const payload = { name: form.name.trim(), type: form.type, color: form.color, icon: effectiveIcon };
+      if (isEdit) await api.put(`/api/v1/categories/${editing.id}`, payload);
+      else        await api.post('/api/v1/categories/', payload);
+      onSaved(!isEdit);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to save category.');
+      setErrors({ name: err.response?.data?.detail || 'Failed to save category.' });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>{isEdit ? 'Edit Category' : 'New Category'}</h3>
-          <button className="modal-close" onClick={onClose}>✕</button>
+    <Modal
+      title={isEdit ? 'Edit category' : 'New category'}
+      sub={isEdit ? 'Update name, type, or colour' : 'Create a custom spending category'}
+      onClose={onClose}
+      icon={effectiveIcon}
+      iconColor={form.color}
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={loading}>
+            {loading ? <Spinner /> : <Icon name="check" size={17} />}
+            {isEdit ? 'Save changes' : 'Create category'}
+          </button>
+        </>
+      }
+    >
+      {/* Live preview */}
+      <div className="center gap12" style={{ padding: 14, background: 'var(--surface-2)', borderRadius: 'var(--r)' }}>
+        <CatIcon cat={previewCat} size="lg" />
+        <div>
+          <div className="fw8" style={{ fontSize: 16 }}>{form.name || 'Category name'}</div>
+          <div className="t-xs muted" style={{ marginTop: 2 }}>{form.type === 'INCOME' ? 'Income' : 'Expense'}</div>
         </div>
-
-        {error && <div className="error-msg">{error}</div>}
-
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">Name</label>
-            <input
-              className="input"
-              type="text"
-              placeholder="e.g. Side Income, Healthcare…"
-              value={form.name}
-              onChange={e => set('name', e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Type</label>
-            <div className="type-toggle">
-              <button type="button" className={form.type === 'INCOME'  ? 'active-income'  : ''} onClick={() => set('type', 'INCOME')}>Income</button>
-              <button type="button" className={form.type === 'EXPENSE' ? 'active-expense' : ''} onClick={() => set('type', 'EXPENSE')}>Expense</button>
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Color</label>
-            <div className="color-swatches">
-              {PRESET_COLORS.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`color-swatch${form.color === c ? ' selected' : ''}`}
-                  style={{ background: c }}
-                  onClick={() => set('color', c)}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="modal-actions">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? <span className="spinner" style={{ width:14, height:14, borderWidth:2 }} /> : null}
-              {isEdit ? 'Save Changes' : 'Create'}
-            </button>
-          </div>
-        </form>
       </div>
-    </div>
+
+      <Field label="Name" error={errors.name}>
+        <TextInput icon="tag" placeholder="e.g. Subscriptions, Healthcare…" value={form.name} error={errors.name} onChange={e => set('name', e.target.value)} autoFocus />
+      </Field>
+
+      <Field label="Type">
+        <Segmented value={form.type} accent onChange={v => set('type', v)}
+          options={[{ value: 'EXPENSE', label: 'Expense' }, { value: 'INCOME', label: 'Income' }]} />
+      </Field>
+
+      <Field label="Icon">
+        <IconPicker value={effectiveIcon} onChange={v => set('icon', v)} />
+      </Field>
+
+      <Field label="Colour">
+        <div className="row wrap" style={{ gap: 9 }}>
+          {PALETTE.map(c => (
+            <button
+              key={c} type="button" onClick={() => set('color', c)}
+              style={{
+                width: 30, height: 30, borderRadius: 9, background: c, cursor: 'pointer',
+                border: form.color === c ? '2.5px solid var(--text)' : '2.5px solid transparent',
+                boxShadow: form.color === c ? '0 0 0 2px var(--bg)' : 'none', transition: '.12s',
+              }}
+            />
+          ))}
+        </div>
+      </Field>
+    </Modal>
   );
 }
-
-const PlusIcon  = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-const EditIcon  = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-const TrashIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>;
-const EmptyIcon = () => <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h7"/></svg>;

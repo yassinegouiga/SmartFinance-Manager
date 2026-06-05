@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -9,46 +9,56 @@ import {
   signOut,
 } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
-import './Login.css';
+import Icon, { GoogleIcon } from '../components/Icons/Icon';
+import { Field, TextInput, Spinner } from '../components/UI';
 
 const provider = new GoogleAuthProvider();
 
 export default function Login() {
-  const [tab, setTab] = useState('signin');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [mode, setMode] = useState('login'); // login | register | verify | forgot
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [errors, setErrors] = useState({});
   const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [resent, setResent] = useState(false);
 
-  const clearMessages = () => { setError(''); setInfo(''); };
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }, []);
+
+  const clear = () => { setErrors({}); setInfo(''); };
+
+  const validate = () => {
+    const e = {};
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) e.email = 'Enter a valid email address';
+    if (mode !== 'forgot' && password.length < 6) e.password = 'Password must be at least 6 characters';
+    if (mode === 'register') {
+      if (!firstName.trim()) e.firstName = 'First name required';
+      if (!lastName.trim()) e.lastName = 'Last name required';
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    clearMessages();
-    if (tab === 'signup') {
-      if (!firstName.trim() || !lastName.trim()) {
-        setError('First and last name are required.');
-        return;
-      }
-      if (password !== confirm) {
-        setError('Passwords do not match.');
-        return;
-      }
-    }
+    clear();
+    if (!validate()) return;
     setLoading(true);
     try {
-      if (tab === 'signin') {
+      if (mode === 'login') {
         const cred = await signInWithEmailAndPassword(auth, email, password);
         if (!cred.user.emailVerified) {
           await signOut(auth);
-          setError('Please verify your email before signing in. Check your inbox for the verification link.');
+          setErrors({ global: 'Please verify your email before signing in. Check your inbox.' });
           return;
         }
-      } else {
+      } else if (mode === 'register') {
         localStorage.setItem('sf_pending_names', JSON.stringify({
           first_name: firstName.trim(),
           last_name: lastName.trim(),
@@ -56,21 +66,23 @@ export default function Login() {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         await sendEmailVerification(cred.user);
         await signOut(auth);
-        setInfo(`Verification email sent to ${email}. Click the link, then sign in here.`);
-        setTab('signin');
-        setFirstName(''); setLastName(''); setPassword(''); setConfirm('');
+        setMode('verify');
+      } else if (mode === 'forgot') {
+        await sendPasswordResetEmail(auth, email);
+        setInfo('Password reset email sent. Check your inbox.');
+        setMode('login');
       }
     } catch (err) {
       localStorage.removeItem('sf_pending_names');
-      setError(friendlyError(err.code));
+      setErrors({ global: friendlyError(err.code) });
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogle = async () => {
-    clearMessages();
-    setLoading(true);
+    clear();
+    setGoogleLoading(true);
     try {
       const result = await signInWithPopup(auth, provider);
       if (result.user.displayName) {
@@ -81,148 +93,254 @@ export default function Login() {
         }));
       }
     } catch (err) {
-      if (err.code !== 'auth/popup-closed-by-user') setError(friendlyError(err.code));
+      if (err.code !== 'auth/popup-closed-by-user') setErrors({ global: friendlyError(err.code) });
     } finally {
-      setLoading(false);
+      setGoogleLoading(false);
     }
   };
 
-  const handleReset = async () => {
-    if (!email) { setError('Enter your email above first.'); return; }
-    clearMessages();
+  const handleResend = async () => {
+    setResent(true);
     try {
-      await sendPasswordResetEmail(auth, email);
-      setInfo('Password reset email sent. Check your inbox.');
-    } catch (err) {
-      setError(friendlyError(err.code));
-    }
+      const cred = auth.currentUser;
+      if (cred) await sendEmailVerification(cred);
+    } catch { /* silent */ }
   };
+
+  const switchMode = (m) => { clear(); setInfo(''); setMode(m); };
+
+  // ── Verify screen ────────────────────────────────────────────────────────────
+  if (mode === 'verify') {
+    return (
+      <div className="auth">
+        <AuthAside />
+        <div className="auth-main">
+          <div className="auth-card" style={{ textAlign: 'center' }}>
+            <div className="cat-ic lg" style={{
+              width: 64, height: 64, borderRadius: 20, margin: '0 auto 18px',
+              background: 'var(--accent-soft)', color: 'var(--accent-2)',
+            }}>
+              <Icon name="mail" size={30} />
+            </div>
+            <h2>Verify your email</h2>
+            <p className="lead" style={{ marginTop: 8 }}>
+              We sent a verification link to{' '}
+              <b style={{ color: 'var(--text)' }}>{email}</b>.{' '}
+              Click it to activate your account.
+            </p>
+            <div className="banner banner-info mt24" style={{ textAlign: 'left' }}>
+              <Icon name="alert" size={18} />
+              <div>
+                <b>Didn't get it?</b>
+                <div className="bd mt4">Check your spam folder, or resend below. Links expire after 24 hours.</div>
+              </div>
+            </div>
+            <p className="t-sm muted mt16">Once verified, return here and sign in.</p>
+            <button className="btn btn-ghost btn-block mt8" disabled={resent} onClick={handleResend}>
+              {resent ? <><Icon name="check" size={16} /> Email resent</> : 'Resend verification email'}
+            </button>
+            <button className="btn btn-ghost btn-block mt8" onClick={() => switchMode('login')}>
+              Back to sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const isReg = mode === 'register';
+  const isForgot = mode === 'forgot';
 
   return (
-    <div className="login-page">
-      <div className="orb orb-purple" />
-      <div className="orb orb-teal" />
+    <div className="auth">
+      <AuthAside />
+      <div className="auth-main">
+        <form className="auth-card" onSubmit={handleSubmit}>
 
-      <div className="login-card glass">
-        <div className="login-brand">
-          <div className="login-brand-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" fill="url(#lg1)"/>
-              <path d="M2 17l10 5 10-5" stroke="url(#lg2)" strokeWidth="2" fill="none" strokeLinecap="round"/>
-              <path d="M2 12l10 5 10-5" stroke="url(#lg3)" strokeWidth="2" fill="none" strokeLinecap="round"/>
-              <defs>
-                <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#6C63FF"/><stop offset="100%" stopColor="#3ECFCF"/></linearGradient>
-                <linearGradient id="lg2" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#6C63FF"/><stop offset="100%" stopColor="#3ECFCF"/></linearGradient>
-                <linearGradient id="lg3" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#6C63FF"/><stop offset="100%" stopColor="#3ECFCF"/></linearGradient>
-              </defs>
-            </svg>
+          {/* Mobile brand — shown only when the aside panel is hidden */}
+          <div className="brand only-mobile" style={{ marginBottom: 18, padding: 0 }}>
+            <div className="logo"><Icon name="wallet" size={20} /></div>
+            <div><div className="name">Smart<span>Finance</span></div></div>
           </div>
-          <h1 className="login-brand-name">SmartFinance</h1>
-        </div>
 
-        <div className="login-tabs">
-          <button
-            className={`login-tab${tab === 'signin' ? ' active' : ''}`}
-            onClick={() => { setTab('signin'); clearMessages(); }}
-          >Sign In</button>
-          <button
-            className={`login-tab${tab === 'signup' ? ' active' : ''}`}
-            onClick={() => { setTab('signup'); clearMessages(); }}
-          >Sign Up</button>
-        </div>
+          <h2>
+            {isForgot ? 'Reset password' : isReg ? 'Create your account' : 'Welcome back'}
+          </h2>
+          <p className="lead">
+            {isForgot
+              ? "Enter your email and we'll send reset instructions."
+              : isReg
+                ? 'Start managing your money in minutes — it\'s free.'
+                : 'Sign in to pick up where you left off.'}
+          </p>
 
-        {error && <div className="error-msg">{error}</div>}
-        {info && <div className="info-msg">{info}</div>}
-
-        <form onSubmit={handleSubmit} className="login-form">
-          {tab === 'signup' && (
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">First Name</label>
-                <input
-                  className="input"
-                  type="text"
-                  placeholder="John"
-                  value={firstName}
-                  onChange={e => setFirstName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Last Name</label>
-                <input
-                  className="input"
-                  type="text"
-                  placeholder="Doe"
-                  value={lastName}
-                  onChange={e => setLastName(e.target.value)}
-                  required
-                />
-              </div>
+          {/* Global error / info */}
+          {errors.global && (
+            <div className="banner banner-neg mt16">
+              <Icon name="alert" size={16} />
+              <span>{errors.global}</span>
+            </div>
+          )}
+          {info && (
+            <div className="banner banner-info mt16">
+              <Icon name="checkCircle" size={16} />
+              <span>{info}</span>
             </div>
           )}
 
-          <div className="form-group">
-            <label className="form-label">Email</label>
-            <input
-              className="input"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <input
-              className="input"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          {tab === 'signup' && (
-            <div className="form-group">
-              <label className="form-label">Confirm Password</label>
-              <input
-                className="input"
-                type="password"
-                placeholder="••••••••"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                required
+          {/* Google button */}
+          {!isForgot && (
+            <>
+              <button type="button" className="google-btn mt24" onClick={handleGoogle} disabled={googleLoading}>
+                {googleLoading ? <Spinner /> : <GoogleIcon size={18} />}
+                Continue with Google
+              </button>
+              <div className="divider-or">or {isReg ? 'sign up' : 'sign in'} with email</div>
+            </>
+          )}
+
+          <div className="grid" style={{ gap: 14, marginTop: isForgot ? 24 : 0 }}>
+            {isReg && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <Field label="First name" error={errors.firstName}>
+                  <TextInput
+                    icon="user" placeholder="John"
+                    value={firstName} error={errors.firstName}
+                    onChange={e => setFirstName(e.target.value)}
+                  />
+                </Field>
+                <Field label="Last name" error={errors.lastName}>
+                  <TextInput
+                    placeholder="Doe"
+                    value={lastName} error={errors.lastName}
+                    onChange={e => setLastName(e.target.value)}
+                  />
+                </Field>
+              </div>
+            )}
+
+            <Field label="Email" error={errors.email}>
+              <TextInput
+                icon="mail" type="email" placeholder="you@example.com"
+                value={email} error={errors.email}
+                onChange={e => setEmail(e.target.value)}
               />
+            </Field>
+
+            {!isForgot && (
+              <Field label="Password" error={errors.password} hint={isReg ? 'Use 6+ characters' : undefined}>
+                <div className="input-icon">
+                  <Icon name="lock" size={17} />
+                  <input
+                    className={'input affixed' + (errors.password ? ' has-err' : '')}
+                    style={{ paddingLeft: 40, paddingRight: 44 }}
+                    type={showPw ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                  />
+                  <button
+                    type="button" className="icon-btn plain"
+                    style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)' }}
+                    onClick={() => setShowPw(s => !s)}
+                  >
+                    <Icon name={showPw ? 'eyeOff' : 'eye'} size={17} />
+                  </button>
+                </div>
+              </Field>
+            )}
+          </div>
+
+          {mode === 'login' && (
+            <div className="between mt12">
+              <label className="center t-sm" style={{ color: 'var(--text-2)', cursor: 'pointer', gap: 7 }}>
+                <input type="checkbox" defaultChecked style={{ accentColor: 'var(--accent)' }} />
+                Remember me
+              </label>
+              <BtnLink onClick={() => switchMode('forgot')}>Forgot password?</BtnLink>
             </div>
           )}
 
-          <button className="btn btn-primary login-submit" type="submit" disabled={loading}>
-            {loading ? <span className="spinner" style={{width:16,height:16,borderWidth:2}} /> : null}
-            {tab === 'signin' ? 'Sign In' : 'Create Account'}
+          <button className="btn btn-primary btn-block btn-lg mt16" type="submit" disabled={loading}>
+            {loading
+              ? <Spinner />
+              : isForgot ? 'Send reset link' : isReg ? 'Create account' : 'Sign in'}
           </button>
+
+          <p className="t-sm muted" style={{ textAlign: 'center', marginTop: 18 }}>
+            {isForgot ? (
+              <>Remembered it? <BtnLink onClick={() => switchMode('login')}>Back to sign in</BtnLink></>
+            ) : isReg ? (
+              <>Already have an account? <BtnLink onClick={() => switchMode('login')}>Sign in</BtnLink></>
+            ) : (
+              <>New to SmartFinance? <BtnLink onClick={() => switchMode('register')}>Create an account</BtnLink></>
+            )}
+          </p>
         </form>
+      </div>
+    </div>
+  );
+}
 
-        {tab === 'signin' && (
-          <button className="login-forgot" onClick={handleReset} type="button">
-            Forgot password?
-          </button>
-        )}
+function BtnLink({ onClick, children }) {
+  return (
+    <button
+      type="button" onClick={onClick}
+      style={{ color: 'var(--accent-2)', fontWeight: 700, background: 'none', border: 0, cursor: 'pointer' }}
+    >
+      {children}
+    </button>
+  );
+}
 
-        <div className="login-divider"><span>or continue with</span></div>
+function AuthAside() {
+  return (
+    <div className="auth-aside">
+      <div className="brand" style={{ padding: 0 }}>
+        <div className="logo"><Icon name="wallet" size={22} /></div>
+        <div>
+          <div className="name" style={{ fontSize: 19 }}>Smart<span>Finance</span></div>
+          <div className="sub">Manager</div>
+        </div>
+      </div>
 
-        <button className="btn btn-ghost login-google" onClick={handleGoogle} disabled={loading}>
-          <svg width="17" height="17" viewBox="0 0 24 24">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-          </svg>
-          Continue with Google
-        </button>
+      <div>
+        <h1 style={{ fontSize: 34, lineHeight: 1.1, maxWidth: 420 }}>
+          Every dollar,<br />beautifully accounted for.
+        </h1>
+        <p style={{ color: 'var(--text-2)', maxWidth: 380, marginTop: 16, fontSize: 15, lineHeight: 1.6 }}>
+          Track spending, set budgets, grow savings pots and never miss a bill — all in one calm, focused workspace.
+        </p>
 
-        <p className="login-tagline">Your finances, beautifully organized.</p>
+        <div className="mock-card-3d">
+          <div className="glow" />
+          <div className="between" style={{ position: 'relative' }}>
+            <div>
+              <div style={{ fontSize: 12, opacity: .75, fontWeight: 600 }}>Total balance</div>
+              <div className="tnum" style={{ fontSize: 30, fontWeight: 800, marginTop: 6 }}>$24,580.40</div>
+            </div>
+            <Icon name="wallet" size={24} style={{ opacity: .8 }} />
+          </div>
+          <div className="row" style={{ position: 'relative', marginTop: 24, gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 11, opacity: .7 }}>Income</div>
+              <div className="tnum fw7" style={{ marginTop: 3 }}>+$5,520</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, opacity: .7 }}>Spent</div>
+              <div className="tnum fw7" style={{ marginTop: 3 }}>−$3,140</div>
+            </div>
+            <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+              <div style={{ fontSize: 11, opacity: .7 }}>Saved</div>
+              <div className="tnum fw7" style={{ marginTop: 3 }}>38%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="row" style={{ gap: 22, color: 'var(--text-3)', fontSize: 12.5, fontWeight: 600 }}>
+        <span className="center"><Icon name="shield" size={15} /> Bank-grade security</span>
+        <span className="center"><Icon name="sparkle" size={15} /> Smart insights</span>
       </div>
     </div>
   );
@@ -230,13 +348,13 @@ export default function Login() {
 
 function friendlyError(code) {
   const map = {
-    'auth/user-not-found': 'No account found with this email.',
-    'auth/wrong-password': 'Incorrect password.',
-    'auth/email-already-in-use': 'An account with this email already exists.',
-    'auth/weak-password': 'Password must be at least 6 characters.',
-    'auth/invalid-email': 'Please enter a valid email address.',
-    'auth/too-many-requests': 'Too many attempts. Please try again later.',
-    'auth/invalid-credential': 'Invalid email or password.',
+    'auth/user-not-found':        'No account found with this email.',
+    'auth/wrong-password':        'Incorrect password.',
+    'auth/email-already-in-use':  'An account with this email already exists.',
+    'auth/weak-password':         'Password must be at least 6 characters.',
+    'auth/invalid-email':         'Please enter a valid email address.',
+    'auth/too-many-requests':     'Too many attempts. Please try again later.',
+    'auth/invalid-credential':    'Invalid email or password.',
   };
   return map[code] || 'Something went wrong. Please try again.';
 }
