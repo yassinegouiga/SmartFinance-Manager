@@ -1,246 +1,394 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import api from '../services/api';
-import './SavingPots.css';
+import { useAuth } from '../context/AuthContext';
+import Icon from '../components/Icons/Icon';
+import { Modal, Field, TextInput, Segmented, Progress, EmptyState, Spinner, ConfirmDialog, CatIcon, IconPicker, PageHead, useToast } from '../components/UI';
+import { fmtMoney, currencySymbol } from '../utils/format';
 
-const fmt = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n ?? 0);
+const POT_COLORS = ['#10b981', '#60a5fa', '#fbbf24', '#fb7185', '#a78bfa', '#f97316', '#06b6d4', '#34d399'];
+const POT_ICONS  = ['target', 'plane', 'card', 'gift', 'shield', 'book', 'heart', 'car', 'coffee', 'bag'];
 
-const POT_COLORS = ['#6C63FF','#3ECFCF','#f59e0b','#22c55e','#ef4444','#3b82f6','#ec4899','#8b5cf6'];
+const NAME_ICON_MAP = {
+  vacation: 'plane', travel: 'plane', holiday: 'plane', trip: 'plane',
+  car: 'car', vehicle: 'car',
+  gift: 'gift', present: 'gift',
+  health: 'heart', medical: 'heart',
+  book: 'book', education: 'book', school: 'book', course: 'book',
+  emergency: 'shield', fund: 'shield',
+  coffee: 'coffee',
+  bag: 'bag', shopping: 'bag',
+  card: 'card', payment: 'card',
+};
 
-function CircleProgress({ pct, color, size = 110 }) {
-  const r = (size - 14) / 2;
-  const circ = 2 * Math.PI * r;
-  const safePct = isNaN(pct) ? 0 : Math.min(pct, 1);
-  const dash = safePct * circ;
-  return (
-    <svg width={size} height={size} style={{ transform:'rotate(-90deg)' }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
-      <circle
-        cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={color} strokeWidth="10"
-        strokeDasharray={`${dash} ${circ}`}
-        strokeLinecap="round"
-        style={{ transition:'stroke-dasharray 0.5s ease' }}
-      />
-    </svg>
-  );
+function getPotStyle(name = '', index = 0) {
+  const lower = name.toLowerCase();
+  const matchedKey = Object.keys(NAME_ICON_MAP).find(k => lower.includes(k));
+  return {
+    color: POT_COLORS[index % POT_COLORS.length],
+    icon:  matchedKey ? NAME_ICON_MAP[matchedKey] : POT_ICONS[index % POT_ICONS.length],
+  };
 }
 
 export default function SavingPots() {
-  const [pots, setPots] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { currency = 'USD' } = useAuth();
+  const toast = useToast();
+  const [pots, setPots]             = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const [fundModal, setFundModal] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
+  const [fundModal, setFundModal]   = useState(null); // { pot, mode }
+  const [delTarget, setDelTarget]   = useState(null);
 
-  const fetchPots = async () => {
+  useEffect(() => {
+    api.get('/api/v1/saving-pots/')
+      .then(r => setPots(r.data))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Prefer the pot's own stored icon/color; fall back to name-based inference.
+  const rows = useMemo(() => pots.map((p, i) => {
+    const style = getPotStyle(p.name, i);
+    return { ...p, icon: p.icon || style.icon, color: p.color || style.color };
+  }), [pots]);
+
+  const totalSaved  = rows.reduce((a, p) => a + (p.current_amount || 0), 0);
+  const totalTarget = rows.reduce((a, p) => a + (p.target_amount || 0), 0);
+
+  const handleDelete = async () => {
+    if (!delTarget) return;
     try {
-      const { data } = await api.get('/api/v1/saving-pots/');
-      setPots(data);
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
+      await api.delete(`/api/v1/saving-pots/${delTarget.id}`);
+      setPots(prev => prev.filter(p => p.id !== delTarget.id));
+      toast && toast('Pot deleted', 'neg');
+    } catch { /* silent */ }
+    finally { setDelTarget(null); }
   };
-
-  useEffect(() => { fetchPots(); }, []);
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this saving pot?')) return;
-    setDeletingId(id);
-    try {
-      await api.delete(`/api/v1/saving-pots/${id}`);
-      setPots(prev => prev.filter(p => p.id !== id));
-    } catch (err) { console.error(err); }
-    finally { setDeletingId(null); }
-  };
-
-  const handleFundAction = (pot, action) => setFundModal({ pot, action });
 
   const handleFundDone = (updatedPot) => {
-    setPots(prev => prev.map(p => p.id === updatedPot.id ? { ...p, current_amount: updatedPot.current_amount ?? p.current_amount } : p));
+    setPots(prev => prev.map(p => p.id === updatedPot.id ? { ...p, current_amount: updatedPot.current_amount } : p));
     setFundModal(null);
-    fetchPots();
   };
 
   if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh' }}>
-      <div className="spinner" />
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+      <Spinner lg />
     </div>
   );
 
   return (
-    <div className="pots-page">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Saving Pots</h1>
-          <p className="page-subtitle">Track your savings goals</p>
-        </div>
+    <div>
+      <PageHead>
         <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-          <PlusIcon /> New Pot
+          <Icon name="plus" size={18} /> <span className="hide-mobile">New pot</span>
         </button>
-      </div>
+      </PageHead>
 
-      {pots.length === 0 ? (
-        <div className="glass empty-state" style={{ padding:'60px 20px' }}>
-          <PotIcon />
-          <h4>No saving pots yet</h4>
-          <p>Create a pot to start saving towards your goals</p>
+      {/* Overview banner */}
+      {rows.length > 0 && (
+        <div className="card pad mb16" style={{ background: 'linear-gradient(135deg, var(--accent-soft), transparent)' }}>
+          <div className="row wrap between" style={{ alignItems: 'center', gap: 20 }}>
+            <div className="center gap16">
+              <div className="cat-ic lg" style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>
+                <Icon name="target" size={26} />
+              </div>
+              <div>
+                <div className="t-sm muted">Total saved across {rows.length} pot{rows.length !== 1 ? 's' : ''}</div>
+                <div className="fw8 tnum" style={{ fontSize: 28 }}>{fmtMoney(totalSaved, currency)}</div>
+              </div>
+            </div>
+            {totalTarget > 0 && (
+              <div style={{ flex: 1, minWidth: 200, maxWidth: 420 }}>
+                <Progress value={totalSaved} max={totalTarget} thick />
+                <div className="between t-xs muted mt8">
+                  <span>{Math.round((totalSaved / totalTarget) * 100)}% of all goals</span>
+                  <span>{fmtMoney(totalTarget, currency)} target</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Pot grid */}
+      {rows.length === 0 ? (
+        <div className="card">
+          <EmptyState
+            icon="target"
+            title="No saving pots yet"
+            body="Create a pot for each goal — a holiday, an emergency fund, a new gadget — and watch it grow."
+            action={<button className="btn btn-primary" onClick={() => setCreateOpen(true)}><Icon name="plus" size={17} /> New pot</button>}
+          />
         </div>
       ) : (
-        <div className="pots-grid">
-          {pots.map((pot, i) => {
-            const color = POT_COLORS[i % POT_COLORS.length];
-            const pct = pot.target_amount > 0 ? pot.current_amount / pot.target_amount : 0;
-            const safePct = isNaN(pct) ? 0 : pct;
-            const done = pot.current_amount >= pot.target_amount;
+        <div className="pot-grid">
+          {rows.map(p => {
+            const pct  = p.target_amount > 0 ? Math.min(100, Math.round((p.current_amount / p.target_amount) * 100)) : 0;
+            const done = p.current_amount >= p.target_amount && p.target_amount > 0;
             return (
-              <div key={pot.id} className="glass pot-card">
-                <div className="pot-card-top">
-                  <div>
-                    <h3 className="pot-name">{pot.name}</h3>
-                    {pot.deadline && (
-                      <span className="pot-deadline">
-                        Due {new Date(pot.deadline).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
-                      </span>
-                    )}
-                  </div>
-                  <button className="btn btn-danger" style={{padding:'5px 8px'}} onClick={() => handleDelete(pot.id)} disabled={deletingId===pot.id}>
-                    <TrashIcon />
-                  </button>
-                </div>
-
-                <div className="pot-ring-wrap">
-                  <CircleProgress pct={safePct} color={color} />
-                  <div className="pot-ring-label">
-                    <span className="pot-ring-pct" style={{ color }}>{Math.round(safePct * 100)}%</span>
-                    {done && <span className="pot-done-badge">Done!</span>}
+              <div className="card pad pot-card" key={p.id}>
+                <div className="between" style={{ alignItems: 'flex-start' }}>
+                  <CatIcon cat={p} size="lg" />
+                  <div className="center gap8 card-acts">
+                    <button className="icon-btn plain" style={{ width: 30, height: 30 }} onClick={() => setDelTarget(p)} title="Delete">
+                      <Icon name="trash" size={15} />
+                    </button>
                   </div>
                 </div>
 
-                <div className="pot-amounts">
-                  <span className="pot-current" style={{ color }}>{fmt(pot.current_amount)}</span>
-                  <span className="pot-target">/ {fmt(pot.target_amount)}</span>
+                <div className="between mt12" style={{ alignItems: 'flex-start' }}>
+                  <div className="fw8" style={{ fontSize: 16 }}>{p.name}</div>
+                  {done && <span className="badge badge-pos"><Icon name="check" size={13} /> Reached</span>}
                 </div>
 
-                <div className="progress-bar" style={{ marginBottom:16 }}>
-                  <div className="progress-fill" style={{ width:`${Math.min(safePct,1)*100}%`, background:color }} />
+                {p.deadline && (
+                  <div className="t-xs muted" style={{ marginTop: 3 }}>
+                    Due {new Date(p.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </div>
+                )}
+
+                <div className="row" style={{ alignItems: 'baseline', gap: 8, marginTop: 14 }}>
+                  <span className="fw8 tnum" style={{ fontSize: 24, color: done ? 'var(--pos)' : 'var(--text)' }}>
+                    {fmtMoney(p.current_amount, currency)}
+                  </span>
+                  <span className="muted tnum t-sm">/ {fmtMoney(p.target_amount, currency)}</span>
                 </div>
 
-                <div className="pot-actions">
-                  <button className="btn btn-success" style={{ flex:1, justifyContent:'center' }} onClick={() => handleFundAction(pot, 'deposit')}>
-                    + Add Funds
+                <div className="mt12">
+                  <Progress value={p.current_amount} max={p.target_amount} color={p.color} thick />
+                </div>
+
+                <div className="between mt8 mb16">
+                  <span className="t-xs fw7" style={{ color: p.color }}>{pct}% funded</span>
+                  <span className="t-xs muted">{done ? 'Goal complete!' : `${fmtMoney(p.target_amount - p.current_amount, currency)} to go`}</span>
+                </div>
+
+                <div className="row gap8">
+                  <button className="btn btn-primary btn-sm flex1" style={{ justifyContent: 'center' }} onClick={() => setFundModal({ pot: p, mode: 'deposit' })}>
+                    <Icon name="download" size={15} /> Add
                   </button>
-                  <button className="btn btn-ghost" style={{ flex:1, justifyContent:'center' }} onClick={() => handleFundAction(pot, 'withdraw')} disabled={pot.current_amount <= 0}>
-                    Withdraw
+                  <button
+                    className="btn btn-outline btn-sm flex1" style={{ justifyContent: 'center' }}
+                    onClick={() => setFundModal({ pot: p, mode: 'withdraw' })}
+                    disabled={!p.current_amount || p.current_amount <= 0}
+                  >
+                    <Icon name="upload" size={15} /> Withdraw
                   </button>
                 </div>
               </div>
             );
           })}
+
+          {/* Add-new tile */}
+          <button className="add-tile" onClick={() => setCreateOpen(true)}>
+            <div className="cat-ic lg" style={{ background: 'var(--accent-soft)', color: 'var(--accent-2)' }}>
+              <Icon name="plus" size={24} />
+            </div>
+            <span className="fw7" style={{ marginTop: 12 }}>New saving pot</span>
+          </button>
         </div>
       )}
 
-      {createOpen && <CreatePotModal onAdded={p => { setPots(prev => [p,...prev]); setCreateOpen(false); }} onClose={() => setCreateOpen(false)} />}
-      {fundModal && <FundModal modal={fundModal} onDone={handleFundDone} onClose={() => setFundModal(null)} />}
+      {createOpen && (
+        <CreatePotModal
+          currency={currency}
+          onAdded={p => { setPots(prev => [p, ...prev]); setCreateOpen(false); toast && toast('Pot created', 'pos'); }}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
+
+      {fundModal && (
+        <FundModal
+          pot={fundModal.pot}
+          initialMode={fundModal.mode}
+          currency={currency}
+          onDone={handleFundDone}
+          onClose={() => setFundModal(null)}
+        />
+      )}
+
+      {delTarget && (
+        <ConfirmDialog
+          title="Delete saving pot?"
+          body={`"${delTarget.name}" and its ${fmtMoney(delTarget.current_amount, currency)} balance record will be permanently removed.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={handleDelete}
+          onClose={() => setDelTarget(null)}
+        />
+      )}
     </div>
   );
 }
 
-function CreatePotModal({ onAdded, onClose }) {
-  const [form, setForm] = useState({ name:'', target_amount:'', deadline:'' });
+function CreatePotModal({ currency, onAdded, onClose }) {
+  const [form, setForm]       = useState({ name: '', target_amount: '', deadline: '', icon: '', color: '' });
+  const [errors, setErrors]   = useState({});
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  // Empty = auto-infer from the name; explicit picks override.
+  const fallback = getPotStyle(form.name, 0);
+  const effectiveIcon  = form.icon  || fallback.icon;
+  const effectiveColor = form.color || fallback.color;
 
   const handleSubmit = async (e) => {
-    e.preventDefault(); setError('');
-    if (!form.target_amount || Number(form.target_amount) <= 0) { setError('Enter a valid target.'); return; }
+    e?.preventDefault();
+    const errs = {};
+    if (!form.name.trim()) errs.name = 'Name your goal';
+    if (!form.target_amount || Number(form.target_amount) <= 0) errs.target_amount = 'Set a target amount greater than 0';
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
     setLoading(true);
     try {
-      const payload = { name: form.name, target_amount: parseFloat(form.target_amount) };
+      const payload = {
+        name: form.name.trim(),
+        target_amount: parseFloat(form.target_amount),
+        icon: effectiveIcon,
+        color: effectiveColor,
+      };
       if (form.deadline) payload.deadline = new Date(form.deadline).toISOString();
       const { data } = await api.post('/api/v1/saving-pots/', payload);
       onAdded(data);
-    } catch (err) { setError(err.response?.data?.detail || 'Failed to create pot.'); }
-    finally { setLoading(false); }
+    } catch (err) {
+      setErrors({ target_amount: err.response?.data?.detail || 'Failed to create pot.' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-header"><h3>New Saving Pot</h3><button className="modal-close" onClick={onClose}>✕</button></div>
-        {error && <div className="error-msg">{error}</div>}
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">Pot Name</label>
-            <input className="input" type="text" placeholder="e.g. Vacation Fund" value={form.name} onChange={e=>set('name',e.target.value)} required />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Target Amount ($)</label>
-            <input className="input" type="number" step="0.01" min="0.01" placeholder="1000.00" value={form.target_amount} onChange={e=>set('target_amount',e.target.value)} required />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Deadline (optional)</label>
-            <input className="input" type="date" value={form.deadline} onChange={e=>set('deadline',e.target.value)} />
-          </div>
-          <div className="modal-actions">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? <span className="spinner" style={{width:14,height:14,borderWidth:2}} /> : null} Create
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <Modal
+      title="New saving pot"
+      sub="Set a goal and start saving"
+      onClose={onClose}
+      icon={effectiveIcon}
+      iconColor={effectiveColor}
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={loading}>
+            {loading ? <Spinner /> : <Icon name="check" size={17} />} Create pot
+          </button>
+        </>
+      }
+    >
+      <Field label="Goal name" error={errors.name}>
+        <TextInput icon="target" placeholder="e.g. Vacation Fund" value={form.name} error={errors.name} onChange={e => set('name', e.target.value)} autoFocus />
+      </Field>
+
+      <Field label="Target amount" error={errors.target_amount}>
+        <TextInput
+          affix={currencySymbol(currency)} type="number" inputMode="decimal" step="0.01" placeholder="1000.00"
+          value={form.target_amount} error={errors.target_amount} onChange={e => set('target_amount', e.target.value)}
+        />
+      </Field>
+
+      <Field label="Deadline" hint="Optional">
+        <TextInput type="date" value={form.deadline} onChange={e => set('deadline', e.target.value)} />
+      </Field>
+
+      <Field label="Icon">
+        <IconPicker value={effectiveIcon} onChange={v => set('icon', v)} />
+      </Field>
+
+      <Field label="Colour">
+        <div className="row wrap" style={{ gap: 9 }}>
+          {POT_COLORS.map(c => (
+            <button
+              key={c} type="button" onClick={() => set('color', c)}
+              style={{
+                width: 30, height: 30, borderRadius: 9, background: c, cursor: 'pointer',
+                border: effectiveColor === c ? '2.5px solid var(--text)' : '2.5px solid transparent',
+                boxShadow: effectiveColor === c ? '0 0 0 2px var(--bg)' : 'none', transition: '.12s',
+              }}
+            />
+          ))}
+        </div>
+      </Field>
+    </Modal>
   );
 }
 
-function FundModal({ modal, onDone, onClose }) {
-  const { pot, action } = modal;
-  const isDeposit = action === 'deposit';
-  const [amount, setAmount] = useState('');
+function FundModal({ pot, initialMode, currency, onDone, onClose }) {
+  const toast = useToast();
+  const [mode, setMode]       = useState(initialMode || 'deposit');
+  const [amount, setAmount]   = useState('');
+  const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+
+  const isDeposit = mode === 'deposit';
+  const after = isDeposit
+    ? (pot.current_amount || 0) + (parseFloat(amount) || 0)
+    : Math.max(0, (pot.current_amount || 0) - (parseFloat(amount) || 0));
 
   const handleSubmit = async (e) => {
-    e.preventDefault(); setError('');
-    if (!amount || Number(amount) <= 0) { setError('Enter a valid amount.'); return; }
-    if (!isDeposit && Number(amount) > pot.current_amount) { setError('Insufficient funds.'); return; }
+    e?.preventDefault();
+    setError('');
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) { setError('Enter a valid amount'); return; }
+    if (!isDeposit && amt > pot.current_amount) {
+      setError(`You only have ${fmtMoney(pot.current_amount, currency)} in this pot`);
+      return;
+    }
     setLoading(true);
     try {
-      const { data } = await api.post(`/api/v1/saving-pots/${pot.id}/${action}`, { amount: parseFloat(amount) });
-      onDone({ ...pot, current_amount: data.current_amount ?? (isDeposit ? pot.current_amount + parseFloat(amount) : pot.current_amount - parseFloat(amount)) });
-    } catch (err) { setError(err.response?.data?.detail || 'Action failed.'); }
-    finally { setLoading(false); }
+      const { data } = await api.post(`/api/v1/saving-pots/${pot.id}/${mode}`, { amount: amt });
+      const updated = {
+        ...pot,
+        current_amount: data.current_amount ?? (isDeposit ? pot.current_amount + amt : pot.current_amount - amt),
+      };
+      onDone(updated);
+      toast && toast(
+        isDeposit ? `${fmtMoney(amt, currency)} added to ${pot.name}` : `${fmtMoney(amt, currency)} withdrawn`,
+        isDeposit ? 'pos' : 'warn',
+      );
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Action failed.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>{isDeposit ? 'Add Funds' : 'Withdraw'} — {pot.name}</h3>
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-        {error && <div className="error-msg">{error}</div>}
-        <p style={{fontSize:13,color:'var(--text-muted)',marginBottom:16}}>
-          Current balance: <strong style={{color:'var(--text-primary)'}}>{new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(pot.current_amount)}</strong>
-        </p>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">Amount ($)</label>
-            <input className="input" type="number" step="0.01" min="0.01" placeholder="0.00" value={amount} onChange={e=>setAmount(e.target.value)} autoFocus required />
-          </div>
-          <div className="modal-actions">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className={`btn ${isDeposit ? 'btn-primary' : 'btn-ghost'}`} disabled={loading}>
-              {loading ? <span className="spinner" style={{width:14,height:14,borderWidth:2}} /> : null}
-              {isDeposit ? 'Deposit' : 'Withdraw'}
-            </button>
-          </div>
-        </form>
+    <Modal
+      title={pot.name}
+      sub={`Balance ${fmtMoney(pot.current_amount, currency)} of ${fmtMoney(pot.target_amount, currency)}`}
+      onClose={onClose}
+      icon={pot.icon || 'target'}
+      iconColor={pot.color}
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className={'btn ' + (isDeposit ? 'btn-primary' : 'btn-outline')} onClick={handleSubmit} disabled={loading}>
+            {loading ? <Spinner /> : <Icon name={isDeposit ? 'download' : 'upload'} size={17} />}
+            {isDeposit ? 'Add money' : 'Withdraw'}
+          </button>
+        </>
+      }
+    >
+      <Segmented
+        value={mode} accent
+        onChange={v => { setMode(v); setError(''); setAmount(''); }}
+        options={[{ value: 'deposit', label: 'Deposit' }, { value: 'withdraw', label: 'Withdraw' }]}
+      />
+
+      <Field label="Amount" error={error}>
+        <TextInput
+          affix={currencySymbol(currency)} type="number" inputMode="decimal" step="0.01" placeholder="0.00"
+          value={amount} error={error} onChange={e => { setAmount(e.target.value); setError(''); }} autoFocus
+        />
+      </Field>
+
+      <div className="row wrap" style={{ gap: 8 }}>
+        {[25, 50, 100, 250].map(v => (
+          <button key={v} className="chip" onClick={() => setAmount(String(v))}>{fmtMoney(v, currency)}</button>
+        ))}
       </div>
-    </div>
+
+      <div className="between" style={{ padding: 13, background: 'var(--surface-2)', borderRadius: 'var(--r)' }}>
+        <span className="t-sm muted">Balance after</span>
+        <span className="fw8 tnum">{fmtMoney(after, currency)}</span>
+      </div>
+    </Modal>
   );
 }
-
-const PlusIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-const TrashIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>;
-const PotIcon = () => <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4c1-.8 1.5-1.7 1.5-2.5A2 2 0 0 0 22 14c0-1.1-1.1-2-2-2V5z"/><path d="M2 9.5C2 6 5 4 8 4"/></svg>;

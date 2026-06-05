@@ -65,6 +65,12 @@ export function AuthProvider({ children }) {
     return data;
   };
 
+  const updateAvatar = async (avatarUrl) => {
+    const { data } = await api.put('/api/v1/users/me', { avatar_url: avatarUrl });
+    setProfile(data);
+    return data;
+  };
+
   const updateCurrency = async (newCurrency) => {
     const prev = currency;
     setCurrency(newCurrency);
@@ -86,7 +92,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user, profile, loading,
       theme, toggleTheme,
-      currency, updateProfile, updateCurrency, deleteAccount,
+      currency, updateProfile, updateAvatar, updateCurrency, deleteAccount,
     }}>
       {children}
     </AuthContext.Provider>
