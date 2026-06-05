@@ -8,6 +8,8 @@ class SavingPotBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     target_amount: float = Field(..., gt=0)
     deadline: Optional[datetime] = None
+    icon: Optional[str] = Field(None, max_length=50)
+    color: Optional[str] = Field(None, max_length=20)
 
 class SavingPotCreate(SavingPotBase):
     pass
@@ -17,6 +19,8 @@ class SavingPotUpdate(BaseModel):
     target_amount: Optional[float] = Field(None, gt=0)
     deadline: Optional[datetime] = None
     status: Optional[PotStatus] = None
+    icon: Optional[str] = Field(None, max_length=50)
+    color: Optional[str] = Field(None, max_length=20)
 
 class SavingPotResponse(SavingPotBase):
     id: UUID
