@@ -19,5 +19,7 @@ class SavingPot(Base):
     target_amount = Column(Float, nullable=False)
     current_amount = Column(Float, default=0.0)
     deadline = Column(DateTime(timezone=True), nullable=True)
+    icon = Column(String, nullable=True)                  # Optional chosen icon name
+    color = Column(String, nullable=True)                 # Optional hex color e.g. "#10b981"
     status = Column(Enum(PotStatus, schema="budget_service" if not os.environ.get("TESTING") else None), default=PotStatus.ACTIVE)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
