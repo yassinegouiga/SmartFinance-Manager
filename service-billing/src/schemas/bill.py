@@ -26,6 +26,7 @@ class BillBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, examples=["Netflix"])
     amount: float = Field(..., gt=0, examples=[15.99])
     due_day: int = Field(..., ge=1, le=31, examples=[15])
+    category_id: Optional[str] = Field(None, examples=["a1b2c3d4"])
     frequency: BillFrequency = Field(default=BillFrequency.MONTHLY)
     is_recurring: bool = Field(default=True)
     icon: Optional[str] = Field(None, max_length=50, examples=["tv"])
@@ -42,6 +43,7 @@ class BillUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     amount: Optional[float] = Field(None, gt=0)
     due_day: Optional[int] = Field(None, ge=1, le=31)
+    category_id: Optional[str] = None
     frequency: Optional[BillFrequency] = None
     is_recurring: Optional[bool] = None
     status: Optional[BillStatus] = None

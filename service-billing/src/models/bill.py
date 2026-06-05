@@ -35,6 +35,7 @@ class Bill(Base):
     name = Column(String(255), nullable=False)           # e.g. "Netflix", "Rent"
     amount = Column(Float, nullable=False)
     due_day = Column(Integer, nullable=False)             # Day of month (1-31)
+    category_id = Column(String, nullable=True)           # Optional ref to a category (id from categories service)
     frequency = Column(
         Enum(BillFrequency, schema="billing_service" if not os.environ.get("TESTING") else None),
         nullable=False,
