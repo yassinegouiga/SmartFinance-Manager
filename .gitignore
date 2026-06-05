@@ -29,3 +29,9 @@ build/
 # ── OS ─────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Local-only dev tooling & artifacts ─────────────────────
+docker-compose.override.yml
+nginx/nginx.dev.conf
+email-preview.html
+Design suggestion/
