@@ -1,13 +1,4 @@
-"""
-User SQLAlchemy model.
 
-Schema (from architecture_design.md §14):
-    users (id, firebase_uid, email, first_name, last_name, avatar_url,
-           auth_provider, currency, theme, created_at)
-
-Added `avatar_url` and `auth_provider` for Google OAuth profile data.
-Added `updated_at` for audit tracking.
-"""
 
 import uuid
 from datetime import datetime
@@ -21,21 +12,21 @@ from src.models.base import Base
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {"schema": "user_service"}  # Isolated schema per architecture §5
+    __table_args__ = {"schema": "user_service"}
 
-    # ── Primary Key ───────────────────────────────────────
+
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
 
-    # ── Firebase Identity ─────────────────────────────────
+
     firebase_uid: Mapped[str] = mapped_column(
         String(128), unique=True, index=True, nullable=False
     )
 
-    # ── Profile ───────────────────────────────────────────
+
     email: Mapped[str] = mapped_column(
         String(255), unique=True, index=True, nullable=False
     )
@@ -43,15 +34,14 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String(100), nullable=False, server_default="")
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # ── Auth Provider ─────────────────────────────────────
-    # Tracks sign-in method: "google.com", "password", "github.com", etc.
+
     auth_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    # ── Preferences / Settings ────────────────────────────
+
     currency: Mapped[str] = mapped_column(String(10), default="USD")
     theme: Mapped[str] = mapped_column(String(20), default="light")
 
-    # ── Timestamps ────────────────────────────────────────
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

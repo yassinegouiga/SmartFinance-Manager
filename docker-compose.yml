@@ -1,5 +1,4 @@
-# SmartFinance Manager - Docker Compose
-# Secrets are loaded from .env (see .env.example)
+
 
 version: '3.8'
 

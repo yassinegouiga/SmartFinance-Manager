@@ -14,7 +14,7 @@ async def process_transaction_event(data: dict, is_delete: bool = False):
     user_id = data.get("user_id")
     amount = data.get("amount", 0.0)
     tx_type = data.get("type", "EXPENSE")
-    date_str = data.get("date") # Assuming ISO format
+    date_str = data.get("date")
 
     if not all([user_id, date_str]):
         logger.warning(f"Invalid transaction event payload: {data}")
@@ -54,7 +54,6 @@ async def process_notification_event(data: dict, notif_type: NotificationType):
 
 
 async def listen_to_redis_events():
-    """Background task to listen to Redis channels."""
     if not redis_client.redis:
         logger.error("Redis client not connected.")
         return

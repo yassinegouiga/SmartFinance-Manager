@@ -1,8 +1,4 @@
-"""
-Firebase JWT verification module.
-Initializes the Firebase Admin SDK and exposes a token verification function
-used by the API dependency layer to authenticate every protected request.
-"""
+
 
 import firebase_admin
 from firebase_admin import auth, credentials
@@ -12,7 +8,6 @@ from src.core.config import settings
 
 
 def _initialize_firebase() -> None:
-    """Initialize Firebase Admin SDK (idempotent — safe to call multiple times)."""
     if firebase_admin._apps:
         return
 
@@ -20,23 +15,10 @@ def _initialize_firebase() -> None:
         cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
         firebase_admin.initialize_app(cred)
     else:
-        # Falls back to GOOGLE_APPLICATION_CREDENTIALS env var or default credentials
         firebase_admin.initialize_app()
 
 
 async def verify_firebase_token(token: str) -> dict:
-    """
-    Verify a Firebase ID token and return the decoded claims.
-
-    Args:
-        token: The raw JWT string from the Authorization header.
-
-    Returns:
-        A dict containing at minimum: uid, email, email_verified.
-
-    Raises:
-        HTTPException 401 if the token is invalid, expired, or revoked.
-    """
     _initialize_firebase()
 
     try:

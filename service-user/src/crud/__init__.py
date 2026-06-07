@@ -1,6 +1,3 @@
-"""
-Re-export CRUD functions.
-"""
 
 from src.crud.user import (
     get_user_by_firebase_uid,

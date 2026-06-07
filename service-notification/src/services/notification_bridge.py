@@ -1,18 +1,4 @@
-"""
-Bridge Pattern — separates WHAT the notification is (type hierarchy)
-from HOW it is delivered (channel hierarchy).
 
-Both hierarchies can vary independently:
-  - Add a new notification type (e.g. GoalReminder) without touching channels.
-  - Add a new channel (e.g. PushChannel) without touching notification types.
-
-Abstraction (notification types)     Implementation (delivery channels)
-─────────────────────────────────    ──────────────────────────────────
-NotificationBase                     DeliveryChannel
-  BudgetAlertNotification              EmailChannel
-  BillReminderNotification             InAppChannel
-  LargeTransactionNotification
-"""
 
 from abc import ABC, abstractmethod
 import logging
@@ -20,7 +6,7 @@ import logging
 logger = logging.getLogger("notification-service.bridge")
 
 
-# ── Implementation side ───────────────────────────────────────────────────────
+
 
 class DeliveryChannel(ABC):
     @abstractmethod
@@ -29,25 +15,21 @@ class DeliveryChannel(ABC):
 
 
 class EmailChannel(DeliveryChannel):
-    """Sends via the configured transactional email provider."""
-
     def deliver(self, email: str, subject: str, html: str) -> None:
         from src.services.email_service import send_email
         send_email(email, subject, html)
 
 
 class InAppChannel(DeliveryChannel):
-    """Records the event without sending an email."""
-
     def deliver(self, email: str, subject: str, html: str) -> None:
         logger.info(f"In-app delivery to {email}: {subject}")
 
 
-# ── Abstraction side ──────────────────────────────────────────────────────────
+
 
 class NotificationBase(ABC):
     def __init__(self, channel: DeliveryChannel):
-        self._channel = channel     # bridge to implementation
+        self._channel = channel
 
     @abstractmethod
     def send(self, email: str, **kwargs) -> None:

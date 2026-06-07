@@ -4,21 +4,20 @@ from src.services.email_adapter import EmailProvider, ResendAdapter
 
 logger = logging.getLogger("email-service")
 
-# Adapter Pattern — the rest of the app only depends on EmailProvider.
-# To switch providers, replace ResendAdapter with e.g. SendGridAdapter here.
+
 def _get_provider() -> EmailProvider:
     return ResendAdapter(settings.RESEND_API_KEY, settings.RESEND_FROM)
 
 
 def send_email(to: str, subject: str, html: str) -> None:
-    """Send an email via the configured provider. Fire-and-forget — errors are logged."""
+
     if not settings.RESEND_API_KEY:
         logger.warning("RESEND_API_KEY not set — skipping email.")
         return
     _get_provider().send(to, subject, html)
 
 
-# ── Design tokens (mirror the SmartFinance app theme) ─────
+
 FONT = "'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 BG          = "#0a0c10"
 SURFACE     = "#14181f"
@@ -39,7 +38,7 @@ WARN        = "#fbbf24"
 INFO        = "#60a5fa"
 
 
-# ── HTML templates ────────────────────────────────────────
+
 
 def _wrap(body: str) -> str:
     return f"""

@@ -1,7 +1,4 @@
-"""
-FastAPI dependencies for the Billing Service.
-Provides database session injection and Firebase JWT authentication.
-"""
+
 
 from typing import AsyncGenerator
 from fastapi import Depends, HTTPException, status
@@ -14,7 +11,6 @@ import os
 from src.core.database import AsyncSessionLocal
 from src.core.config import settings
 
-# Initialize Firebase Admin
 if not firebase_admin._apps:
     if os.path.exists(settings.FIREBASE_CREDENTIALS_PATH):
         cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)

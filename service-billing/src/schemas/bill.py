@@ -1,6 +1,4 @@
-"""
-Pydantic schemas (DTOs) for the Billing Service.
-"""
+
 
 from pydantic import BaseModel, Field
 from uuid import UUID

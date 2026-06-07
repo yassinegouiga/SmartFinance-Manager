@@ -1,5 +1,4 @@
 import os
-# Set TESTING before importing models so the isolated schema is omitted (SQLite has no schemas)
 os.environ["TESTING"] = "1"
 
 import pytest

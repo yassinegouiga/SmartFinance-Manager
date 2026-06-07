@@ -15,7 +15,6 @@ async def create_notification(
     type: str,
     reference_key: Optional[str] = None,
 ) -> Optional[Notification]:
-    """Create a notification, skipping if reference_key already exists."""
     if reference_key:
         existing = await db.execute(
             select(Notification).where(Notification.reference_key == reference_key)

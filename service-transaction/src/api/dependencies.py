@@ -15,7 +15,6 @@ async def get_db():
 async def get_current_user_id(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security_scheme)]
 ) -> str:
-    """Validate Firebase JWT and return the Firebase UID string."""
     token_data = await verify_firebase_token(credentials.credentials)
 
     uid = token_data.get("uid")

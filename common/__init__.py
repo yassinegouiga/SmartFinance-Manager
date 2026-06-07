@@ -1,9 +1,4 @@
-"""
-SmartFinance Common Modules.
 
-Shared utilities copied into each microservice during Docker build.
-See architecture_design.md §8 for the shared modules strategy.
-"""
 
 from common.security import initialize_firebase, verify_firebase_token
 from common.exceptions import (

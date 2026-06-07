@@ -1,7 +1,4 @@
-"""
-Unit tests for the business logic / service layer.
-Mocks the CRUD layer to isolate domain logic.
-"""
+
 
 from unittest.mock import AsyncMock, patch
 
@@ -12,12 +9,10 @@ from tests.conftest import make_test_user
 
 
 class TestGetOrCreateUser:
-    """Tests for the auto-onboarding logic (architecture §9 step 6)."""
 
     @pytest.mark.asyncio
     @patch("src.services.user.get_user_by_firebase_uid", new_callable=AsyncMock)
     async def test_returns_existing_user(self, mock_get, mock_db):
-        """When user already exists, return them with is_new=False."""
         existing_user = make_test_user()
         mock_get.return_value = existing_user
 
@@ -33,7 +28,6 @@ class TestGetOrCreateUser:
     @patch("src.services.user.create_user", new_callable=AsyncMock)
     @patch("src.services.user.get_user_by_firebase_uid", new_callable=AsyncMock)
     async def test_creates_new_user_on_first_login(self, mock_get, mock_create, mock_db):
-        """When user doesn't exist, auto-create and return with is_new=True."""
         mock_get.return_value = None
         new_user = make_test_user(firebase_uid="brand_new_uid", email="new@example.com")
         mock_create.return_value = new_user
@@ -50,7 +44,6 @@ class TestGetOrCreateUser:
     @patch("src.services.user.create_user", new_callable=AsyncMock)
     @patch("src.services.user.get_user_by_firebase_uid", new_callable=AsyncMock)
     async def test_create_user_receives_correct_schema(self, mock_get, mock_create, mock_db):
-        """Verify the UserCreate schema is built with the right uid and email."""
         mock_get.return_value = None
         mock_create.return_value = make_test_user()
 
@@ -59,6 +52,6 @@ class TestGetOrCreateUser:
         )
 
         call_args = mock_create.call_args
-        user_create = call_args[0][1]  # second positional arg
+        user_create = call_args[0][1]
         assert user_create.firebase_uid == "uid_abc"
         assert user_create.email == "abc@example.com"

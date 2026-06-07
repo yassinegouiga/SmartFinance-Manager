@@ -9,7 +9,6 @@ import os
 from src.core.database import AsyncSessionLocal
 from src.core.config import settings
 
-# Initialize Firebase Admin
 if not firebase_admin._apps:
     if os.path.exists(settings.FIREBASE_CREDENTIALS_PATH):
         cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
@@ -26,8 +25,6 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     token = credentials.credentials
     try:
-        # Verify the Firebase token
-        # In a real environment, this makes sure the token is valid, signed, and not expired
         decoded_token = auth.verify_id_token(token, clock_skew_seconds=30)
         uid = decoded_token.get("uid")
         if not uid:

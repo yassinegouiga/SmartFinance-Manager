@@ -18,7 +18,6 @@ class Category(Base):
     icon = Column(String, nullable=True)
     color = Column(String, nullable=True)
     type = Column(Enum(CategoryType), nullable=False)
-    # NULL = global/default category; set = user's custom category (firebase_uid)
     user_id = Column(String(128), nullable=True, index=True)
 
     transactions = relationship("Transaction", back_populates="category")

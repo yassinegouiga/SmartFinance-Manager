@@ -5,7 +5,6 @@ import os
 
 logger = logging.getLogger("transaction-service.redis")
 
-# Using localhost for MVP. In docker, this would be the 'redis' container hostname.
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 class RedisPublisher:

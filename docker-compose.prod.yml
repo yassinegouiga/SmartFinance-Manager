@@ -1,9 +1,4 @@
-# Production overrides — use with:
-#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-#
-# What this adds on top of docker-compose.yml:
-#   - restart: always  (recover from crashes AND server reboots)
-#   - log rotation     (prevents disk from filling up)
+
 
 version: '3.8'
 

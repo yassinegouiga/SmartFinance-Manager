@@ -15,7 +15,6 @@ async def get_dashboard_summary(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Get the current month's financial summary and unread notifications count."""
     data = await dashboard_facade.get_full_dashboard(db, user_id)
     return DashboardSummaryResponse(
         current_month_summary=data["summary"],
@@ -28,7 +27,6 @@ async def get_notifications(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Get all unread notifications for the user."""
     return await crud_analytics.get_unread_notifications(db, user_id)
 
 @router.post("/notifications/{notif_id}/read", response_model=NotificationResponse)
@@ -37,7 +35,6 @@ async def mark_notification_as_read(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Mark a specific notification as read."""
     notif = await crud_analytics.mark_notification_read(db, notif_id, user_id)
     if not notif:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")

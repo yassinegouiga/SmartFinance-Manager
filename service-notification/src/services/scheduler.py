@@ -1,7 +1,4 @@
-"""
-Notification scheduler — runs every 30 minutes and checks all notification conditions.
-Uses reference_key deduplication so the same event never triggers twice.
-"""
+
 
 import asyncio
 import logging
@@ -30,7 +27,7 @@ logger = logging.getLogger("notification-scheduler")
 LARGE_TXN_THRESHOLD = 500.0
 
 
-# ── Individual check functions ────────────────────────────
+
 
 async def check_bill_reminders(db) -> None:
     rows = await db.execute(text("""
@@ -259,7 +256,7 @@ async def send_monthly_summaries(db) -> None:
             )
 
 
-# ── Main scheduler loop ───────────────────────────────────
+
 
 async def run_scheduler() -> None:
     logger.info("Notification scheduler started.")
@@ -275,15 +272,13 @@ async def run_scheduler() -> None:
                 await check_large_transactions(db)
                 await check_saving_milestones(db)
 
-                # Weekly digest — every Monday
                 if now.weekday() == 0 and now.hour == 8:
                     await send_weekly_digests(db)
 
-                # Monthly summary — 1st of each month
                 if now.day == 1 and now.hour == 8:
                     await send_monthly_summaries(db)
 
         except Exception as e:
             logger.error(f"Scheduler error: {e}", exc_info=True)
 
-        await asyncio.sleep(1800)  # run every 30 minutes
+        await asyncio.sleep(1800)

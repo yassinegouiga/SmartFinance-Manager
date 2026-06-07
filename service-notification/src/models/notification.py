@@ -14,6 +14,6 @@ class Notification(Base):
     message = Column(Text, nullable=True)
     type = Column(String(50), nullable=False)
     is_read = Column(Boolean, default=False, nullable=False)
-    # Unique key used to prevent duplicate notifications for the same event
+
     reference_key = Column(String(255), nullable=True, unique=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

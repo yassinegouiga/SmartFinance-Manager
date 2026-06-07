@@ -1,0 +1,16 @@
+services:
+  gateway-dev:
+    image: nginx:alpine
+    container_name: smartfinance-gateway-dev
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - service-user
+      - service-transaction
+      - service-budget
+      - service-billing
+      - service-analytics
+      - service-notification
+    restart: on-failure

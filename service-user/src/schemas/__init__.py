@@ -1,6 +1,3 @@
-"""
-Re-export all schemas.
-"""
 
 from src.schemas.user import (
     UserCreate,

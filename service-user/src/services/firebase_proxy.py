@@ -1,11 +1,4 @@
-"""
-Proxy Pattern — caches decoded Firebase tokens to avoid a network round-trip
-to the Firebase API on every authenticated request.
 
-A fresh call to auth.verify_id_token() is only made when:
-  - The token is not in the cache, or
-  - The cached entry has expired (60 s before the token's own 'exp' claim).
-"""
 
 import time
 import logging
@@ -30,7 +23,7 @@ class FirebaseAuthProxy:
         decoded = auth.verify_id_token(token, clock_skew_seconds=clock_skew_seconds)
 
         exp = decoded.get("exp", now + 3600)
-        self._cache[token] = (decoded, exp - 60)   # expire 60 s early for safety
+        self._cache[token] = (decoded, exp - 60)
 
         self._evict_expired(now)
         return decoded

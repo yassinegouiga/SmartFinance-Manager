@@ -1,9 +1,4 @@
-"""
-Shared structured logging configuration for all SmartFinance microservices.
 
-Outputs JSON-formatted logs with correlation IDs for distributed tracing
-across the microservice boundary (architecture §20).
-"""
 
 import logging
 import json
@@ -12,7 +7,6 @@ from datetime import datetime, timezone
 
 
 class JSONFormatter(logging.Formatter):
-    """Formats log records as single-line JSON for easy ingestion by Loki/ELK."""
 
     def format(self, record: logging.LogRecord) -> str:
         log_entry = {
@@ -31,16 +25,6 @@ class JSONFormatter(logging.Formatter):
 
 
 def setup_logging(service_name: str, level: int = logging.INFO) -> logging.Logger:
-    """
-    Configure the root logger with JSON output.
-
-    Args:
-        service_name: Identifier for this microservice (e.g., "user-service").
-        level: Logging level threshold.
-
-    Returns:
-        A configured logger instance for the service.
-    """
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JSONFormatter())
 
@@ -49,7 +33,6 @@ def setup_logging(service_name: str, level: int = logging.INFO) -> logging.Logge
     root_logger.addHandler(handler)
 
     logger = logging.getLogger(service_name)
-    # Attach the service name so the formatter can include it
     old_factory = logging.getLogRecordFactory()
 
     def record_factory(*args, **kwargs):

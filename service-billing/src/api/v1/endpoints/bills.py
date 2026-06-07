@@ -1,10 +1,4 @@
-"""
-Bill endpoints — CRUD operations for recurring bills management.
 
-Architecture §4 (Billing Service):
-  Managing recurring bills, due dates, paid/unpaid statuses,
-  and tracking upcoming payments.
-"""
 
 from typing import List, Optional
 from uuid import UUID
@@ -25,7 +19,6 @@ async def create_bill(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Create a new bill."""
     return await crud_bill.create_bill(db=db, bill=bill, user_id=user_id)
 
 
@@ -37,7 +30,6 @@ async def read_bills(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """List all bills for the current user, optionally filtered by status."""
     return await crud_bill.get_bills(db, user_id=user_id, skip=skip, limit=limit, status=status)
 
 
@@ -46,7 +38,6 @@ async def read_upcoming_bills(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Get all unpaid bills due on or after today's date."""
     current_day = datetime.now().day
     return await crud_bill.get_upcoming_bills(db, user_id=user_id, current_day=current_day)
 
@@ -56,7 +47,6 @@ async def read_bills_summary(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Get a summary of the user's billing status."""
     all_bills = await crud_bill.get_bills(db, user_id=user_id)
     total_upcoming = await crud_bill.get_total_upcoming(db, user_id=user_id)
 
@@ -79,7 +69,6 @@ async def read_bill(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Get a specific bill by ID."""
     bill = await crud_bill.get_bill(db, bill_id=bill_id, user_id=user_id)
     if not bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
@@ -93,7 +82,6 @@ async def update_bill(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Update a bill's details."""
     db_bill = await crud_bill.get_bill(db, bill_id=bill_id, user_id=user_id)
     if not db_bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
@@ -106,7 +94,6 @@ async def pay_bill(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Mark a bill as paid."""
     db_bill = await crud_bill.get_bill(db, bill_id=bill_id, user_id=user_id)
     if not db_bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
@@ -119,7 +106,6 @@ async def reset_bill(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Reset a bill to unpaid (for next billing cycle)."""
     db_bill = await crud_bill.get_bill(db, bill_id=bill_id, user_id=user_id)
     if not db_bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
@@ -132,7 +118,6 @@ async def delete_bill(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Delete a bill."""
     db_bill = await crud_bill.get_bill(db, bill_id=bill_id, user_id=user_id)
     if not db_bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")

@@ -1,12 +1,4 @@
-"""
-Shared test fixtures for the User Service test suite.
 
-Uses FastAPI's dependency override mechanism to inject:
-  - A mock database session (no real DB needed)
-  - A mock authenticated user (no real Firebase needed)
-
-This lets all tests run fast, offline, and without infrastructure.
-"""
 
 import uuid
 from datetime import datetime, timezone
@@ -19,9 +11,7 @@ from src.api.dependencies import get_current_user, get_db
 from src.main import app
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Sample Data
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 TEST_USER_ID = uuid.uuid4()
 TEST_FIREBASE_UID = "firebase_test_uid_123"
@@ -30,11 +20,6 @@ TEST_NOW = datetime.now(timezone.utc)
 
 
 def make_test_user(**overrides) -> MagicMock:
-    """
-    Factory to create a mock User object for testing.
-    Uses MagicMock to avoid SQLAlchemy instrumentation issues
-    while providing all the attributes a User ORM model would have.
-    """
     defaults = dict(
         id=TEST_USER_ID,
         firebase_uid=TEST_FIREBASE_UID,
@@ -54,25 +39,20 @@ def make_test_user(**overrides) -> MagicMock:
     for key, value in defaults.items():
         setattr(mock_user, key, value)
 
-    # Make __repr__ useful for debugging
     mock_user.__repr__ = lambda self: f"<MockUser {defaults['email']}>"
 
     return mock_user
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Fixtures
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 @pytest.fixture
 def test_user() -> MagicMock:
-    """Provide a default test user instance."""
     return make_test_user()
 
 
 @pytest.fixture
 def mock_db() -> AsyncMock:
-    """Provide a mocked async database session."""
     session = AsyncMock()
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
@@ -83,10 +63,6 @@ def mock_db() -> AsyncMock:
 
 @pytest.fixture
 async def client(test_user, mock_db) -> AsyncClient:
-    """
-    Provide an async test client with all dependencies overridden.
-    No real DB or Firebase is needed.
-    """
 
     async def override_get_db():
         yield mock_db

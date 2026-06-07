@@ -11,7 +11,7 @@ from src.models.base import Base
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+
     import logging
     logger = logging.getLogger("budget-service")
     logger.info("Starting Budget Service...")
@@ -20,19 +20,16 @@ async def lifespan(app: FastAPI):
     from sqlalchemy import text
 
     async with engine.begin() as conn:
-        # Ensure the isolated schema exists
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS budget_service"))
         await conn.run_sync(Base.metadata.create_all)
 
-        # Idempotent additive migration: create_all never alters existing tables,
-        # so add new nullable columns explicitly for older databases.
         pots = "saving_pots" if os.environ.get("TESTING") else "budget_service.saving_pots"
         for col in ("icon VARCHAR", "color VARCHAR"):
             await conn.execute(text(f"ALTER TABLE IF EXISTS {pots} ADD COLUMN IF NOT EXISTS {col}"))
 
     await redis_subscriber.start_listening()
     yield
-    # Shutdown
+
     await redis_subscriber.disconnect()
 
 app = FastAPI(

@@ -1,8 +1,4 @@
-"""
-Unit tests for the CRUD layer.
-Mocks the AsyncSession to verify correct SQLAlchemy calls
-without needing a real database connection.
-"""
+
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,9 +18,7 @@ from src.schemas.user import UserCreate, UserUpdate, SettingsUpdate
 from tests.conftest import make_test_user
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Read Operations
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 class TestGetUserByFirebaseUid:
     @pytest.mark.asyncio
@@ -86,9 +80,7 @@ class TestGetUserByEmail:
         assert result is user
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Write Operations
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 class TestCreateUser:
     @pytest.mark.asyncio
@@ -124,7 +116,7 @@ class TestUpdateUser:
         result = await update_user(mock_db, user, user_in)
 
         assert result.first_name == "Jane"
-        assert result.last_name == "Doe"  # unchanged
+        assert result.last_name == "Doe"
 
 
 class TestUpdateSettings:
@@ -155,7 +147,7 @@ class TestUpdateSettings:
         result = await update_settings(mock_db, user, settings_in)
 
         assert result.theme == "dark"
-        assert result.currency == "USD"  # unchanged
+        assert result.currency == "USD"
 
 
 class TestDeleteUser:

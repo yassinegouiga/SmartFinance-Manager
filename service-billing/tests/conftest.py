@@ -1,10 +1,6 @@
-"""
-Test fixtures for the Billing Service.
-Uses SQLite in-memory for fast, isolated unit tests.
-"""
+
 
 import os
-# Set TESTING env var BEFORE importing models so schema is omitted
 os.environ["TESTING"] = "1"
 
 import pytest

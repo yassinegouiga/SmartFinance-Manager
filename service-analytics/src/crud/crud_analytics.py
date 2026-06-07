@@ -19,7 +19,6 @@ async def get_or_create_monthly_summary(db: AsyncSession, user_id: str, month: i
     return summary
 
 async def update_monthly_totals(db: AsyncSession, user_id: str, amount: float, tx_type: str, date_obj: datetime, is_delete: bool = False):
-    """Updates the monthly total when a transaction is created or deleted."""
     summary = await get_or_create_monthly_summary(db, user_id, date_obj.month, date_obj.year)
     
     multiplier = -1 if is_delete else 1

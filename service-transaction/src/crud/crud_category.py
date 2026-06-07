@@ -76,7 +76,7 @@ async def seed_categories(db: AsyncSession) -> None:
         {"name": "Gifts",          "type": CategoryTypeSchema.INCOME,  "icon": "gift",          "color": "#EC4899"},
     ]
     for cat_data in default_categories:
-        # Flyweight: share CategoryMeta instances for identical icon/color combos
+
         meta = CategoryIconPool.get(cat_data["icon"], cat_data["color"])
         db.add(Category(name=cat_data["name"], type=cat_data["type"], icon=meta.icon, color=meta.color))
 

@@ -20,14 +20,12 @@ async def create_transaction(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    # Verify category exists
     category = await crud_category.get_category(db, category_id=transaction.category_id)
     if not category:
         raise HTTPException(status_code=400, detail="Category not found")
 
     db_transaction = await crud_transaction.create_transaction(db=db, transaction=transaction, user_id=user_id)
     
-    # Publish event
     await redis_publisher.publish_event("transaction.created", {
         "id": str(db_transaction.id),
         "user_id": user_id,
@@ -59,10 +57,8 @@ async def export_transactions_csv(
     output = io.StringIO()
     writer = csv.writer(output)
     
-    # Write header
     writer.writerow(["ID", "Amount", "Type", "Category ID", "Date", "Description", "Is Recurring"])
     
-    # Write data
     for t in transactions:
         writer.writerow([
             str(t.id),
@@ -111,7 +107,6 @@ async def update_transaction(
             
     updated_transaction = await crud_transaction.update_transaction(db=db, db_transaction=db_transaction, transaction=transaction)
     
-    # We could publish TransactionUpdated here if needed by other services
     return updated_transaction
 
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)

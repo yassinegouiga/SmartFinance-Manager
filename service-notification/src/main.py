@@ -20,7 +20,7 @@ logger = logging.getLogger("notification-service")
 async def lifespan(app: FastAPI):
     logger.info("Starting Notification Service...")
 
-    from src.models.notification import Notification  # noqa: F401
+    from src.models.notification import Notification
     async with engine.begin() as conn:
         await conn.execute(
             __import__("sqlalchemy").text("CREATE SCHEMA IF NOT EXISTS notification_service")

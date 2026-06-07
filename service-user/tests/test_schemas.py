@@ -1,7 +1,4 @@
-"""
-Unit tests for Pydantic schema validation.
-Verifies that request DTOs enforce the constraints defined in the architecture.
-"""
+
 
 import pytest
 from pydantic import ValidationError
@@ -9,9 +6,7 @@ from pydantic import ValidationError
 from src.schemas.user import UserCreate, UserUpdate, SettingsUpdate
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  UserCreate
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 class TestUserCreate:
     def test_valid_user_create(self):
@@ -28,9 +23,7 @@ class TestUserCreate:
             UserCreate(firebase_uid="abc123")
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  UserUpdate
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 class TestUserUpdate:
     def test_valid_partial_update(self):
@@ -57,9 +50,7 @@ class TestUserUpdate:
         assert len(update.first_name) == 100
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  SettingsUpdate
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 class TestSettingsUpdate:
     def test_valid_theme_light(self):
@@ -92,7 +83,6 @@ class TestSettingsUpdate:
         assert settings.theme is None
 
     def test_exclude_unset_works(self):
-        """Ensure partial updates only include provided fields."""
         settings = SettingsUpdate(currency="GBP")
         dumped = settings.model_dump(exclude_unset=True)
         assert "currency" in dumped

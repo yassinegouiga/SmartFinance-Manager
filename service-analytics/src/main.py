@@ -21,10 +21,9 @@ logger = logging.getLogger("analytics-service")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
     logger.info("Starting Analytics Service...")
 
-    from src.models import MonthlySummary, Notification  # noqa: F401
+    from src.models import MonthlySummary, Notification
 
     await redis_client.connect()
 

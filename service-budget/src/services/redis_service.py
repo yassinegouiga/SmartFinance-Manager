@@ -57,11 +57,9 @@ class RedisSubscriber:
             amount = float(data.get("amount", 0.0))
             txn_type = data.get("type", "expense")
 
-            # Ignore incomes for budget calculation
             if txn_type.lower() != "expense":
                 return
 
-            # Determine amount change (created = add, deleted = subtract)
             if channel == "transaction.created":
                 amount_change = amount
             elif channel == "transaction.deleted":
@@ -90,7 +88,6 @@ class RedisSubscriber:
                 )
 
                 if budget and budget.spent_amount > budget.monthly_limit:
-                    # Publish BudgetExceeded event
                     await self._publish_budget_exceeded(
                         user_id=user_id,
                         category_id=str(category_id),

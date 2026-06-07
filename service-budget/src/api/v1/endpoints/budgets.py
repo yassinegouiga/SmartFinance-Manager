@@ -15,7 +15,6 @@ async def create_budget(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    # Check if budget already exists for this category/month/year
     existing_budgets = await crud_budget.get_budgets(db, user_id=user_id)
     for b in existing_budgets:
         if b.category_id == budget.category_id and b.month == budget.month and b.year == budget.year:

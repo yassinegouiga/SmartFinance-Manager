@@ -1,1 +1,0 @@
-# User Service - Core Package

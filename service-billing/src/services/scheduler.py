@@ -1,7 +1,4 @@
-"""
-Scheduler for the Billing Service.
-Runs periodically to check due bills, mark them overdue, and trigger auto-pay.
-"""
+
 
 import asyncio
 import logging
@@ -17,12 +14,10 @@ logger = logging.getLogger("billing-scheduler")
 
 
 async def check_due_bills():
-    """Check for due and overdue bills."""
     logger.info("Scheduler: Checking for due bills...")
     async with AsyncSessionLocal() as db:
         now = datetime.now()
         
-        # 1. Check for OVERDUE bills
         overdue_query = select(Bill).filter(
             Bill.status == BillStatus.UNPAID,
             Bill.next_due_date < now
@@ -35,7 +30,6 @@ async def check_due_bills():
             bill.status = BillStatus.OVERDUE
             await db.commit()
             
-            # Publish event
             await redis_publisher.publish(
                 "bill.overdue",
                 {
@@ -46,8 +40,6 @@ async def check_due_bills():
                 }
             )
 
-        # 2. Check for bills due TODAY for Auto-pay (simplification)
-        # In a real system, you'd check a specific window or use exact dates.
         due_today_query = select(Bill).filter(
             Bill.status == BillStatus.UNPAID,
             Bill.auto_pay == True,
@@ -59,7 +51,6 @@ async def check_due_bills():
         for bill in autopay_bills:
             logger.info(f"Triggering auto-pay for Bill {bill.id}.")
             
-            # Trigger auto-pay logic (e.g., publish to transaction service)
             await redis_publisher.publish(
                 "bill.autopay_triggered",
                 {
@@ -67,17 +58,15 @@ async def check_due_bills():
                     "user_id": bill.user_id,
                     "name": bill.name,
                     "amount": bill.amount,
-                    "category_id": None, # Could map to a category
+                    "category_id": None,
                     "type": "EXPENSE"
                 }
             )
             
-            # Note: We don't mark it PAID here, we'd wait for a success event from the transaction service.
-            # But for MVP, we could mark it processing or leave as UNPAID/OVERDUE until confirmation.
+
 
 
 async def run_scheduler():
-    """Main loop for the scheduler."""
     logger.info("Billing scheduler started.")
     while True:
         try:
@@ -85,5 +74,4 @@ async def run_scheduler():
         except Exception as e:
             logger.error(f"Error in scheduler: {e}")
             
-        # Run every 60 seconds (for MVP/testing). In production, run daily or hourly.
         await asyncio.sleep(60)

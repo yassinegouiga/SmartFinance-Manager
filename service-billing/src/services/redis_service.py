@@ -1,7 +1,4 @@
-"""
-Redis publisher for the Billing Service.
-Publishes BillDue and BillOverdue events for the Analytics/Notification service to consume.
-"""
+
 
 import json
 import logging
@@ -27,14 +24,12 @@ class RedisPublisher:
             logger.info("Disconnected from Redis")
 
     async def publish(self, channel: str, data: dict):
-        """Generic publish method used by the scheduler."""
         if not self.redis_client:
             await self.connect()
         await self.redis_client.publish(channel, json.dumps(data))
         logger.info(f"Published event to {channel}")
 
     async def publish_bill_due(self, user_id: str, bill_id: str, bill_name: str, amount: float, due_day: int):
-        """Publish a BillDue event when a bill is approaching its due date."""
         if not self.redis_client:
             return
 
@@ -49,7 +44,6 @@ class RedisPublisher:
         logger.info(f"Published BillDue for bill {bill_id} ({bill_name})")
 
     async def publish_bill_overdue(self, user_id: str, bill_id: str, bill_name: str, amount: float):
-        """Publish a BillOverdue event when a bill passes its due date without payment."""
         if not self.redis_client:
             return
 
@@ -63,7 +57,6 @@ class RedisPublisher:
         logger.info(f"Published BillOverdue for bill {bill_id} ({bill_name})")
 
     async def publish_bill_paid(self, user_id: str, bill_id: str, bill_name: str, amount: float):
-        """Publish a BillPaid event for analytics tracking."""
         if not self.redis_client:
             return
 
